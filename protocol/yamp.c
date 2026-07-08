@@ -59,10 +59,10 @@ gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
 		retval.ChannelName = NULL;
 		retval.type = YAMP_DM;
 		retval.where = dupedwhere;
-		if (strcmp(where, curUsername) == 0) {
-			retval.OtherGuy = minus + 1;
-		} else {
+		if (strcmp(minus+1, curUsername) == 0) {
 			retval.OtherGuy = safewhere;
+		} else {
+			retval.OtherGuy = minus + 1;
 		}
 		retval.GuildName = NULL;
 		*out = retval;

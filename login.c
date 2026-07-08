@@ -49,10 +49,15 @@ gboolean CloseLoginDialog(gpointer data) {
 	gtk_window_destroy(GTK_WINDOW(login_window));
 	return G_SOURCE_REMOVE;
 }
-void onYAMPLoggedIn() {
+gboolean DoLoggedIn(gpointer data) {
 	YAMPListBuddies(mainsock);
 	StartMainIMWindow();
-    g_idle_add_full(G_PRIORITY_LOW, CloseLoginDialog, NULL, NULL);
+	CloseLoginDialog(NULL);
+	return G_SOURCE_REMOVE;
+}
+
+void onYAMPLoggedIn() {
+	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, NULL, NULL);
 }
 gboolean ErrorOnLoginFail(gpointer data) {
 	GtkAlertDialog *dialog = gtk_alert_dialog_new(

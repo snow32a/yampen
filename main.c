@@ -10,7 +10,6 @@
 GQueue *spaces_queue = NULL;
 GtkApplication *global_app;
 static void activate(GtkApplication *app, gpointer user_data) {
-	CreateMainIMWindow(app);
 	DisplayLoginDialog(app);
 	/*
 	GtkWidget *window;

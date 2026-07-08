@@ -4,6 +4,7 @@
 #include "glib-object.h"
 #include "login.h"
 #include "chatwnd.h"
+#include "settings.h"
 #include "glibconfig.h"
 #include "gtk/gtkshortcut.h"
 #include "protocol/yamp.h"
@@ -72,6 +73,11 @@ void onYAMPSpacesFetched(cJSON *Spaces) {
 		                  cJSON_GetObjectItem(Space, "name")->valuestring);
 		curSpace = strdup(cJSON_GetObjectItem(Space, "name")->valuestring);
 	}
+	GtkWidget *insertbtn = gtk_list_box_row_new();
+	GtkWidget *insertbtnimg = gtk_image_new_from_file("./insertguild.png");
+	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 48);
+	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(insertbtn),insertbtnimg);
+	gtk_list_box_append(GTK_LIST_BOX(GuildList),insertbtn);
 }
 void onYAMPChannelsFetched(cJSON *Channels) {
 	gtk_list_box_remove_all(GTK_LIST_BOX(BuddyList));
@@ -87,8 +93,15 @@ void onYAMPChannelsFetched(cJSON *Channels) {
 		gtk_list_box_append(GTK_LIST_BOX(BuddyList), lbr);
 	}
 }
+GCallback UserDetailsBoxOnClick(gpointer none){
+	SpawnSettings();
+	return G_SOURCE_REMOVE;
+}
 void StartMainIMWindow() {
-	gtk_widget_set_visible(main_window, 1);
+	main_window = gtk_application_window_new(global_app);
+	gtk_window_set_title(GTK_WINDOW(main_window), "Yampen");
+	gtk_window_set_default_size(GTK_WINDOW(main_window), 200, 300);
+	GMenu *menu = g_menu_new();
 	gtk_window_present(GTK_WINDOW(main_window));
 	GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
@@ -136,17 +149,9 @@ void StartMainIMWindow() {
 	gtk_box_append(GTK_BOX(UserDetailsBox), Pfp);
 	gtk_box_append(GTK_BOX(UserDetailsBox), UsernameLabel);
 	gtk_box_append(GTK_BOX(vbox), UserDetailsBox);
+	g_signal_connect(UserDetailsBox,"clicked",G_CALLBACK(UserDetailsBoxOnClick),NULL);
 }
 
-void CreateMainIMWindow(GtkApplication *app) {
-
-	main_window = gtk_application_window_new(app);
-	gtk_window_set_title(GTK_WINDOW(main_window), "Yampen");
-	gtk_window_set_default_size(GTK_WINDOW(main_window), 200, 300);
-	gtk_window_present(GTK_WINDOW(main_window));
-	GMenu *menu = g_menu_new();
-	gtk_widget_set_visible(main_window, 0);
-}
 void onYAMPBuddyListed(cJSON *Buddies) {
 
 	gtk_list_box_remove_all(GTK_LIST_BOX(BuddyList));
