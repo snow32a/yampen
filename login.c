@@ -31,8 +31,6 @@ GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 		return 0;
 	}
-	printf(gtk_entry_buffer_get_text(
-	    gtk_entry_get_buffer(GTK_ENTRY(password_entry))));
 	int ConnectStatus = YAMPConnect(server, &mainsock);
 	if (ConnectStatus < 0) {
 		GtkAlertDialog *dialog = gtk_alert_dialog_new(

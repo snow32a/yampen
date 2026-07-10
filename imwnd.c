@@ -15,6 +15,7 @@
 GtkWidget *main_window;
 GtkWidget *BuddyList;
 GtkWidget *GuildList;
+GtkWidget *SelfPfp;
 gboolean listmode = TRUE;
 char *curSpace = NULL;
 CURL *curl;
@@ -138,15 +139,15 @@ void StartMainIMWindow() {
 	}
 	GtkWidget *UsernameLabel = gtk_label_new(displayName);
 
-	GtkWidget *Pfp = gtk_image_new_from_file("./pfp.png");
+	SelfPfp = gtk_image_new_from_file(GetPfpPath(curUsername));
 	GtkCssProvider *provider = gtk_css_provider_new();
 	gtk_css_provider_load_from_string(
 	    provider, "* { border: 2px solid #108020; -gtk-icon-size: 32px; }");
 
-	gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
+	gtk_style_context_add_provider(gtk_widget_get_style_context(SelfPfp),
 	                               GTK_STYLE_PROVIDER(provider),
 	                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-	gtk_box_append(GTK_BOX(UserDetailsBox), Pfp);
+	gtk_box_append(GTK_BOX(UserDetailsBox), SelfPfp);
 	gtk_box_append(GTK_BOX(UserDetailsBox), UsernameLabel);
 	gtk_box_append(GTK_BOX(vbox), UserDetailsBox);
 	g_signal_connect(UserDetailsBox,"clicked",G_CALLBACK(UserDetailsBoxOnClick),NULL);
@@ -190,7 +191,7 @@ void onYAMPBuddyListed(cJSON *Buddies) {
 		                               "status")
 		               ->valuestring,
 		           "online") == 0) {
-			statusClr = "00C010";
+			statusClr = "00C020";
 		} else if (strcmp(cJSON_GetObjectItem(
 		                      cJSON_GetObjectItem(Buddy, "status"), "status")
 		                      ->valuestring,
@@ -240,4 +241,20 @@ void onYAMPUserDetailsFetched(cJSON *Details) {
 	char *display_name =
 	    cJSON_GetObjectItem(Details, "display_name")->valuestring;
 	InsertDisplayName(username, display_name);
+	curUsername = username;
+		if (!cJSON_GetObjectItem(Details, "pfp")) {
+			InsertPfpPath(username,"./pfp.png");
+		} else {
+			curl_easy_setopt(curl, CURLOPT_URL,
+			                 cJSON_GetObjectItem(Details, "pfp")->valuestring);
+			size_t len = 10 + strlen(username);
+			char *filePath = malloc(len);
+			sprintf(filePath, "/tmp/%s.png", username);
+			FILE *fl = fopen(filePath, "wb");
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
+			curl_easy_perform(curl);
+			fclose(fl);
+			printf("%s\n", filePath);
+			InsertPfpPath(username,filePath);
+		}
 }

@@ -7,7 +7,7 @@ typedef struct {
 	GtkWidget *EntryArea;
 	GtkWidget *ChatView;
 } send_im_obj;
-void PushUIMessage(GtkWidget *chatarea, char *username, char *content) {
+void PushUIMessage(GtkWidget *chatarea, char *username, char* displayname, char *content) {
 	GtkWidget *msgrow = gtk_list_box_row_new();
 	gtk_widget_set_hexpand(msgrow, TRUE);
 	gtk_widget_set_halign(msgrow, GTK_ALIGN_START);
@@ -15,9 +15,9 @@ void PushUIMessage(GtkWidget *chatarea, char *username, char *content) {
 	gtk_widget_set_halign(msghbox, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(msghbox, TRUE);
 	GtkWidget *msgvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-	GtkWidget *usrtext = gtk_label_new(username);
+	GtkWidget *usrtext = gtk_label_new(displayname);
 	gtk_label_set_markup(GTK_LABEL(usrtext),
-	                     g_strdup_printf("<b>%s</b>", username));
+	                     g_strdup_printf("<b>%s</b>", displayname));
 	gtk_widget_set_halign(usrtext, GTK_ALIGN_START);
 	gtk_box_append(GTK_BOX(msgvbox), usrtext);
 	GtkWidget *msgtext = gtk_label_new(content);
@@ -33,7 +33,7 @@ void PushUIMessage(GtkWidget *chatarea, char *username, char *content) {
 	);
 	gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
 	gtk_box_append(GTK_BOX(msgvbox), msgtext);
-	GtkWidget *userpfp = gtk_image_new_from_file("pfp.png");
+	GtkWidget *userpfp = gtk_image_new_from_file(GetPfpPath(username));
 	gtk_image_set_pixel_size(GTK_IMAGE(userpfp), 36);
 	gtk_box_append(GTK_BOX(msghbox), userpfp);
 	gtk_box_append(GTK_BOX(msghbox), msgvbox);
@@ -205,7 +205,7 @@ static gboolean receive_im_main_thread(gpointer user_data) {
 	if (!username) {
 		username = payload->username;
 	}
-	PushUIMessage(chatarea, username, payload->data);
+	PushUIMessage(chatarea, payload->username,username, payload->data);
 	return G_SOURCE_REMOVE;
 }
 
