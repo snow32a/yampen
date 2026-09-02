@@ -5,36 +5,40 @@
 #include "gtk/gtkshortcut.h"
 #include "protocol/yamp.h"
 #include "globals.h"
+#include <libsecret/secret.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+const SecretSchema AppSchema = {
+	"xyz.snow32.yampen",
+	SECRET_SCHEMA_NONE,
+	{{"username", SECRET_SCHEMA_ATTRIBUTE_STRING}, {NULL, 0}}};
 GtkWidget *login_window;
 GtkWidget *username_entry;
 GtkWidget *password_entry;
-char* curUsername;
+char *curUsername;
 int mainsock;
-GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
-	printf("Logging in bleh\n");
-	char *uns = gtk_entry_buffer_get_text(
-	    gtk_entry_get_buffer(GTK_ENTRY(username_entry)));
-	char *password = gtk_entry_buffer_get_text(
-	    gtk_entry_get_buffer(GTK_ENTRY(password_entry)));
-	char *username;
+int NwLogin(char* uns, char* password){
+		char *username;
 	char *server;
 	if (strlen(password) < 1) {
-		GtkAlertDialog *dialog = gtk_alert_dialog_new(
-		    "You need to enter your password");
+		GtkAlertDialog *dialog =
+			gtk_alert_dialog_new("You need to enter your password");
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 	}
 	if (!(SplitAddress(uns, &username, &server) && strlen(username) > 0 &&
-	      strlen(server) > 0)) {
+		  strlen(server) > 0)) {
 		GtkAlertDialog *dialog = gtk_alert_dialog_new(
-		    "Your user format seems incorrect, YAMP uses user@server.com style "
-		    "IDs");
+			"Your user format seems incorrect, YAMP uses user@server.com style "
+			"IDs");
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 		return 0;
 	}
 	int ConnectStatus = YAMPConnect(server, &mainsock);
 	if (ConnectStatus < 0) {
 		GtkAlertDialog *dialog = gtk_alert_dialog_new(
-		    "Failed connecting to the specified server!\n");
+			"Failed connecting to the specified server!\n");
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 		return 0;
 	} else {
@@ -43,11 +47,54 @@ GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 	YAMPLogin(mainsock, username, password);
 	curUsername = strdup(username);
 }
-gboolean CloseLoginDialog(gpointer data) {
-	gtk_window_destroy(GTK_WINDOW(login_window));
-	return G_SOURCE_REMOVE;
+GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
+	printf("Logging in bleh\n");
+	char *uns = gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(username_entry)));
+	char *password = gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(password_entry)));
+	char *cfpath =
+		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
+	char *cpath =
+		g_build_filename(g_get_user_config_dir(), "yampen", NULL);
+
+	if (mkdir(cpath, 0755) == -1 && errno != EEXIST) {
+		perror("mkdir");
+	}
+
+	int fd = open(cfpath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd == -1) {
+		perror("open");
+	}
+	write(fd,uns,strlen(uns));
+	close(fd);
+	NwLogin(uns, password);
+		GError *error = NULL;
+	int ok = secret_password_store_sync(&AppSchema, SECRET_COLLECTION_DEFAULT,
+							   "Yampen account password", password, NULL,
+							   &error, "username", uns, NULL);
+
+if (!ok) {
+    fprintf(stderr, "secret store failed: %s\n",
+            error ? error->message : "unknown error");
+
+    if (error)
+        g_error_free(error);
+} else {
+    printf("password stored successfully\n");
+}
+}
+gboolean CloseLoginDialog(gpointer data)
+{
+    if (login_window != NULL) {
+        gtk_window_destroy(GTK_WINDOW(login_window));
+        login_window = NULL;
+    }
+
+    return G_SOURCE_REMOVE;
 }
 gboolean DoLoggedIn(gpointer data) {
+    g_application_release(G_APPLICATION(g_application_get_default()));
 	YAMPListBuddies(mainsock);
 	StartMainIMWindow();
 	CloseLoginDialog(NULL);
@@ -58,16 +105,60 @@ void onYAMPLoggedIn() {
 	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, NULL, NULL);
 }
 gboolean ErrorOnLoginFail(gpointer data) {
-	GtkAlertDialog *dialog = gtk_alert_dialog_new(
-		"Username or password wrong!\n");
+	GtkAlertDialog *dialog =
+		gtk_alert_dialog_new("Username or password wrong!\n");
 	gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 	return G_SOURCE_REMOVE;
 }
 void onYAMPLoginFail() {
 	g_idle_add_full(G_PRIORITY_LOW, ErrorOnLoginFail, NULL, NULL);
 }
-void DisplayLoginDialog(GtkApplication *app) {
+typedef struct{
+	char* uns;
+	char* pwd;
+} SavedCred;
+int GetSavedLoginData(SavedCred* out){
+		char *cpath =
+		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
 
+	int fd = open(cpath, O_RDONLY, 0);
+	if (fd == -1) {
+		perror("open");
+		return 0;
+	}
+	struct stat lustat;
+	stat(cpath,&lustat);
+	char* defusr=malloc(lustat.st_size+1);
+
+	read(fd,defusr,lustat.st_size);
+	defusr[lustat.st_size]='\0';
+	out->uns=defusr;
+	if(fd==-1){
+		printf("failed to open\n");
+	}
+	close(fd);
+	GError *error = NULL;
+	gchar *password =
+		secret_password_lookup_sync(&AppSchema,
+									NULL, // cancellable
+									&error, "username", defusr, NULL);
+	if (password != NULL) {
+		out->pwd=password;
+	}else{
+		printf("no passwd\n");
+		return 0;
+	}
+	return 1;
+}
+void DisplayLoginDialog(GtkApplication *app) {
+	SavedCred cred;
+	if(GetSavedLoginData(&cred)){
+		g_application_hold(G_APPLICATION(app));
+		NwLogin(cred.uns, cred.pwd);
+		free(cred.uns);
+		secret_password_free(cred.pwd);
+		return;
+	}
 	login_window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(login_window), "Yampen - Login");
 	gtk_window_set_default_size(GTK_WINDOW(login_window), 600, 400);
@@ -90,13 +181,14 @@ void DisplayLoginDialog(GtkApplication *app) {
 	PangoAttrList *attrs = pango_attr_list_new();
 	pango_attr_list_insert(attrs, pango_attr_size_new(32 * PANGO_SCALE));
 	pango_attr_list_insert(attrs,
-	                       pango_attr_weight_new(PANGO_WEIGHT_ULTRABOLD));
+						   pango_attr_weight_new(PANGO_WEIGHT_ULTRABOLD));
 	gtk_label_set_attributes(GTK_LABEL(title), attrs);
 	pango_attr_list_unref(attrs);
 	gtk_box_append(GTK_BOX(titlebox), title);
 
 	// subtitle
-	GtkWidget *subtitle = gtk_label_new("The official client of the Yet Another Messaging Protocol");
+	GtkWidget *subtitle = gtk_label_new(
+		"The official client of the Yet Another Messaging Protocol");
 	gtk_widget_set_opacity(subtitle, 0.7);
 	gtk_box_append(GTK_BOX(titlebox), subtitle);
 
@@ -114,7 +206,7 @@ void DisplayLoginDialog(GtkApplication *app) {
 	PangoAttrList *header_attrs = pango_attr_list_new();
 	pango_attr_list_insert(header_attrs, pango_attr_size_new(18 * PANGO_SCALE));
 	pango_attr_list_insert(header_attrs,
-	                       pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+						   pango_attr_weight_new(PANGO_WEIGHT_BOLD));
 	gtk_label_set_attributes(GTK_LABEL(login_header), header_attrs);
 	pango_attr_list_unref(header_attrs);
 	gtk_box_append(GTK_BOX(loginbox), login_header);
@@ -126,7 +218,7 @@ void DisplayLoginDialog(GtkApplication *app) {
 
 	username_entry = gtk_entry_new();
 	gtk_entry_set_placeholder_text(GTK_ENTRY(username_entry),
-	                               "user@example.com");
+								   "user@example.com");
 	gtk_widget_set_size_request(username_entry, 250, -1);
 	gtk_box_append(GTK_BOX(loginbox), username_entry);
 
@@ -137,10 +229,10 @@ void DisplayLoginDialog(GtkApplication *app) {
 
 	password_entry = gtk_entry_new();
 	gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry),
-	                               "Enter your password");
+								   "Enter your password");
 	gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
 	gtk_entry_set_input_purpose(GTK_ENTRY(password_entry),
-	                            GTK_INPUT_PURPOSE_PASSWORD);
+								GTK_INPUT_PURPOSE_PASSWORD);
 	gtk_widget_set_size_request(password_entry, 250, -1);
 	gtk_box_append(GTK_BOX(loginbox), password_entry);
 

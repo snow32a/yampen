@@ -7,10 +7,11 @@ typedef struct {
 	GtkWidget *EntryArea;
 	GtkWidget *ChatView;
 } send_im_obj;
-void PushUIMessage(GtkWidget *chatarea, char *username, char* displayname, char *content) {
+void PushUIMessage(GtkWidget* chatscroll, GtkWidget *chatarea, char *username, char* displayname, char *content) {
 	GtkWidget *msgrow = gtk_list_box_row_new();
 	gtk_widget_set_hexpand(msgrow, TRUE);
 	gtk_widget_set_halign(msgrow, GTK_ALIGN_START);
+	gtk_widget_set_valign(msgrow, GTK_ALIGN_START);
 	GtkWidget *msghbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 	gtk_widget_set_halign(msghbox, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(msghbox, TRUE);
@@ -41,9 +42,7 @@ void PushUIMessage(GtkWidget *chatarea, char *username, char* displayname, char 
 	gtk_list_box_append(GTK_LIST_BOX(chatarea), msgrow);
 
 	GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
-	    GTK_SCROLLED_WINDOW(g_object_get_data(
-	        G_OBJECT(gtk_widget_get_ancestor(chatarea, GTK_TYPE_WINDOW)),
-	        "scroll")));
+	    GTK_SCROLLED_WINDOW(chatscroll));
 	gtk_adjustment_set_value(adj, gtk_adjustment_get_upper(adj));
 }
 static gboolean gui_send_im(GtkEventControllerKey *controller, guint keyval,
@@ -66,10 +65,7 @@ static gboolean gui_send_im(GtkEventControllerKey *controller, guint keyval,
 	}
 	return FALSE;
 }
-gboolean ChatWindowClose(gpointer data) {
-	DeregisterChatWindow((char *)data);
-	return FALSE;
-}
+
 void SpawnChatWindow(char *toWho) {
 	GtkWidget *mainhbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 	if (GetChatWindow(toWho)) {
@@ -123,9 +119,6 @@ void SpawnChatWindow(char *toWho) {
 	GtkEventController *key_controller = gtk_event_controller_key_new();
 	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(gui_send_im),
 	                 dat);
-	gtk_widget_add_controller(entry, key_controller);
-	g_signal_connect(chat_window, "close-request", G_CALLBACK(ChatWindowClose),
-	                 dat->where);
 
 	if (WhereParsed.type == YAMP_DM) {
 		char *window_title =
@@ -174,7 +167,6 @@ void SpawnChatWindow(char *toWho) {
 		char *window_title =
 		malloc(15 + strlen(WhereParsed.GuildName) + strlen(WhereParsed.ChannelName) + 1);
 		sprintf(window_title, "Yampen - %s - #%s", WhereParsed.GuildName, WhereParsed.ChannelName);
-		YAMPGetMessageHistory(mainsock,toWho);
 		gtk_window_set_title(GTK_WINDOW(chat_window), window_title);
 	}
 	gtk_window_set_default_size(GTK_WINDOW(chat_window), 1200, 720);
@@ -183,36 +175,3 @@ void SpawnChatWindow(char *toWho) {
 	gtk_window_present(GTK_WINDOW(chat_window));
 }
 
-typedef struct {
-	char *username;
-	char *data;
-	char *where;
-} IMReceivePayload;
-
-static gboolean receive_im_main_thread(gpointer user_data) {
-	IMReceivePayload *payload = user_data;
-
-	GtkWidget *targetWnd = GetChatWindow(payload->where);
-	if (!targetWnd) {
-		SpawnChatWindow(payload->where);
-		targetWnd = GetChatWindow(payload->where);
-	}
-
-	GtkWidget *chatarea =
-	    GTK_WIDGET(g_object_get_data(G_OBJECT(targetWnd), "chatview"));
-	char *username;
-	username = GetDisplayName(payload->username);
-	if (!username) {
-		username = payload->username;
-	}
-	PushUIMessage(chatarea, payload->username,username, payload->data);
-	return G_SOURCE_REMOVE;
-}
-
-void onYAMPReceiveIM(char *username, char *where, char *data) {
-	IMReceivePayload *payload = malloc(sizeof(IMReceivePayload));
-	payload->username = strdup(username);
-	payload->data = strdup(data);
-	payload->where = strdup(where);
-	g_idle_add(receive_im_main_thread, payload);
-}
