@@ -9,12 +9,16 @@ typedef struct {
 } send_im_obj;
 void PushUIMessage(GtkWidget* chatscroll, GtkWidget *chatarea, char *username, char* displayname, char *content) {
 	GtkWidget *msgrow = gtk_list_box_row_new();
-	gtk_widget_set_hexpand(msgrow, TRUE);
-	gtk_widget_set_halign(msgrow, GTK_ALIGN_START);
-	gtk_widget_set_valign(msgrow, GTK_ALIGN_START);
+	gtk_widget_set_hexpand(msgrow, TRUE);	
+	GtkWidget *msgbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_set_hexpand(msgbox, TRUE);
+	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(msgrow), msgbox);
+
+	gtk_widget_set_halign(msgbox, GTK_ALIGN_START);
+	gtk_widget_set_valign(msgbox, GTK_ALIGN_START);
 	GtkWidget *msghbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-	gtk_widget_set_halign(msghbox, GTK_ALIGN_START);
-	gtk_widget_set_hexpand(msghbox, TRUE);
+	gtk_widget_set_halign(msgbox, GTK_ALIGN_START);
+	gtk_widget_set_hexpand(msgbox, TRUE);
 	GtkWidget *msgvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	GtkWidget *usrtext = gtk_label_new(displayname);
 	gtk_label_set_markup(GTK_LABEL(usrtext),
@@ -35,7 +39,8 @@ void PushUIMessage(GtkWidget* chatscroll, GtkWidget *chatarea, char *username, c
 	gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
 	gtk_box_append(GTK_BOX(msgvbox), msgtext);
 	GtkWidget *userpfp = gtk_image_new_from_file(GetPfpPath(username));
-	gtk_image_set_pixel_size(GTK_IMAGE(userpfp), 36);
+	gtk_widget_set_valign(userpfp, GTK_ALIGN_START);
+	gtk_image_set_pixel_size(GTK_IMAGE(userpfp), 42);
 	gtk_box_append(GTK_BOX(msghbox), userpfp);
 	gtk_box_append(GTK_BOX(msghbox), msgvbox);
 	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(msgrow), msghbox);

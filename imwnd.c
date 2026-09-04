@@ -14,10 +14,14 @@
 #include <curl/curl.h>
 GtkWidget *main_window;
 GtkWidget *BuddyList;
+GtkWidget *dmsbutton;
+GtkWidget *GuildVBOX;
 GtkWidget *GuildList;
 GtkWidget *SelfPfp;
 GtkWidget *chatscroll;
 GtkWidget *chatarea;
+GtkWidget *DisplayNameLabel;
+GtkWidget *UsernameLabel;
 gboolean listmode = TRUE;
 char *curSpace = NULL;
 CURL *curl;
@@ -27,6 +31,36 @@ static gboolean onUIDisconnected(gpointer none) {
 	DisplayLoginDialog(global_app);
 	return G_SOURCE_REMOVE;
 }
+
+typedef struct {
+	GtkWidget *EntryArea;
+	GtkWidget *ChatView;
+} EKeyPayload;
+static gboolean EntryKeyHandler(GtkEventControllerKey *controller, guint keyval,
+								guint keycode, GdkModifierType state,
+								gpointer user_data) {
+
+	printf("KEY: keyval=%u keycode=%u\n", keyval, keycode);
+
+	if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) &&
+		!(state & GDK_SHIFT_MASK)) {
+		EKeyPayload *dat = (EKeyPayload *)user_data;
+		GtkTextBuffer *buf =
+			gtk_text_view_get_buffer(GTK_TEXT_VIEW(dat->EntryArea));
+		GtkTextIter start, end;
+		gtk_text_buffer_get_start_iter(buf, &start);
+		gtk_text_buffer_get_end_iter(buf, &end);
+		char *content = gtk_text_buffer_get_text(
+			gtk_text_view_get_buffer(GTK_TEXT_VIEW(dat->EntryArea)), &start,
+			&end, TRUE);
+		YAMPSendIM(mainsock, currentChat, content);
+		gtk_text_buffer_set_text(
+			gtk_text_view_get_buffer(GTK_TEXT_VIEW(dat->EntryArea)), "", 0);
+		return GDK_EVENT_STOP;
+	}
+	return FALSE;
+}
+
 void onYAMPDisconnected() { g_idle_add(onUIDisconnected, 0); }
 void on_buddy_row_activated(GtkListBox *box, GtkListBoxRow *row,
 							gpointer user_data) {
@@ -39,7 +73,8 @@ void on_buddy_row_activated(GtkListBox *box, GtkListBoxRow *row,
 			gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
 		char *name = gtk_label_get_text(GTK_LABEL(child));
 		char *username = g_object_get_data(G_OBJECT(child), "username");
-		currentChat = MakeDMChannel(name, username);
+		currentChat = MakeDMChannel(username, curUsername);
+		gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
 		YAMPGetMessageHistory(mainsock, currentChat);
 	} else {
 		char *channelname =
@@ -54,25 +89,12 @@ void on_buddy_row_activated(GtkListBox *box, GtkListBoxRow *row,
 }
 GCallback on_space_row_activated(GtkListBox *box, GtkListBoxRow *row,
 								 gpointer user_data) {
-GtkListBoxRow *dmsrow = gtk_list_box_get_row_at_index(GTK_LIST_BOX(GuildList), 0);
-GtkWidget *dmsbtn_widget = g_object_get_data(G_OBJECT(dmsrow), "button");
-GtkWidget *dmsimg = gtk_button_get_child(GTK_BUTTON(dmsbtn_widget));
-
-
-	if (strcmp((char *)g_object_get_data(G_OBJECT(row), "name"), "dm") == 0) {
-    gtk_widget_add_css_class(dmsbtn_widget, "active");
-    gtk_image_set_from_file(GTK_IMAGE(dmsimg), "./assets/dmson.svg");
-		if (listmode == FALSE) {
-			YAMPListBuddies(mainsock);
-			listmode = TRUE;
-		}
-} else {
-    gtk_widget_remove_css_class(dmsbtn_widget, "active");
-    gtk_image_set_from_file(GTK_IMAGE(dmsimg), "./assets/dmsoff.svg");
-		listmode = FALSE;
-	}
+	gtk_widget_remove_css_class(dmsbutton, "active");
+	listmode = FALSE;
+	YAMPListSpaceChannels(mainsock, "yamp-central");
 }
-void onYAMPSpacesFetched(cJSON *Spaces) {
+int MainThreadSpaceCB(gpointer data) {
+	cJSON *Spaces = data;
 	for (int i = 0; i < cJSON_GetArraySize(Spaces); i++) {
 		cJSON *Space = cJSON_GetArrayItem(Spaces, i);
 		printf("%s\n", cJSON_GetObjectItem(Space, "display_name")->valuestring);
@@ -89,14 +111,14 @@ void onYAMPSpacesFetched(cJSON *Spaces) {
 						  cJSON_GetObjectItem(Space, "name")->valuestring);
 		curSpace = strdup(cJSON_GetObjectItem(Space, "name")->valuestring);
 	}
-	GtkWidget *insertbtn = gtk_list_box_row_new();
-	GtkWidget *insertbtnimg =
-		gtk_image_new_from_file("./assets/createguild.png");
-	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 48);
-	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(insertbtn), insertbtnimg);
-	gtk_list_box_append(GTK_LIST_BOX(GuildList), insertbtn);
+	return G_SOURCE_REMOVE;
 }
-void onYAMPChannelsFetched(cJSON *Channels) {
+void onYAMPSpacesFetched(cJSON *Spaces) {
+	g_idle_add(MainThreadSpaceCB, Spaces);
+}
+
+int MainThreadChannelCB(gpointer data) {
+	cJSON *Channels = data;
 	gtk_list_box_remove_all(GTK_LIST_BOX(BuddyList));
 	for (int i = 0; i < cJSON_GetArraySize(Channels); i++) {
 		cJSON *Channel = cJSON_GetArrayItem(Channels, i);
@@ -109,24 +131,27 @@ void onYAMPChannelsFetched(cJSON *Channels) {
 		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(lbr), label);
 		gtk_list_box_append(GTK_LIST_BOX(BuddyList), lbr);
 	}
+
+	return G_SOURCE_REMOVE;
+}
+void onYAMPChannelsFetched(cJSON *Channels) {
+	g_idle_add(MainThreadChannelCB, Channels);
 }
 GCallback UserDetailsBoxOnClick(gpointer none) {
 	SpawnSettings();
 	return G_SOURCE_REMOVE;
 }
 static void on_dms_btn_clicked(GtkButton *btn, gpointer user_data) {
-    GtkListBoxRow *dmsrow = gtk_list_box_get_row_at_index(GTK_LIST_BOX(GuildList), 0);
-    GtkWidget *dmsbtn_widget = g_object_get_data(G_OBJECT(dmsrow), "button");
-    GtkWidget *dmsimg = gtk_button_get_child(GTK_BUTTON(dmsbtn_widget));
+	gtk_widget_add_css_class(dmsbutton, "active");
+	gtk_list_box_unselect_row(GTK_LIST_BOX(GuildList),gtk_list_box_get_selected_row(GTK_LIST_BOX(GuildList)));
 
-    gtk_widget_add_css_class(dmsbtn_widget, "active");
-    gtk_image_set_from_file(GTK_IMAGE(dmsimg), "./assets/dmson.svg");
-
-    if (listmode == FALSE) {
-        YAMPListBuddies(mainsock);
-        listmode = TRUE;
-    }
+	if (listmode == FALSE) {
+		YAMPListBuddies(mainsock);
+		listmode = TRUE;
+	}
 }
+char FetchedUserProfile = false;
+GtkWidget *UsernameLabel;
 void StartMainIMWindow() {
 	main_window = gtk_application_window_new(global_app);
 	gtk_window_set_title(GTK_WINDOW(main_window), "Yampen");
@@ -141,46 +166,72 @@ void StartMainIMWindow() {
 	GtkWidget *chatvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	gtk_widget_set_hexpand(chatvbox, TRUE);
 
+	GuildVBOX = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	GuildList = gtk_list_box_new();
-GtkWidget *dmsbtn = gtk_list_box_row_new();
-gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(dmsbtn), FALSE);
-g_object_set_data(G_OBJECT(dmsbtn), "name", "dm");
 
-GtkWidget *dmsbutton = gtk_button_new();
-gtk_widget_set_size_request(dmsbutton, 48, 48);
+	dmsbutton = gtk_button_new();
+	gtk_widget_set_size_request(dmsbutton, 52, 52);
+	gtk_widget_set_hexpand(dmsbutton, FALSE);
+	gtk_widget_set_vexpand(dmsbutton, FALSE);
+	GtkIconTheme *theme =
+		gtk_icon_theme_get_for_display(gdk_display_get_default());
 
-GtkWidget *dmsbtnimg = gtk_image_new_from_file("./assets/dmsoff.svg");
-gtk_image_set_pixel_size(GTK_IMAGE(dmsbtnimg), 28);
-gtk_button_set_child(GTK_BUTTON(dmsbutton), dmsbtnimg);
-g_signal_connect(dmsbutton, "clicked", G_CALLBACK(on_dms_btn_clicked), NULL);
+	const char *paths[] = {"/home/snow32/Projects/yampen/assets/icons", NULL};
 
-GtkCssProvider *dmsprovider = gtk_css_provider_new();
-gtk_css_provider_load_from_string(dmsprovider,
-    "button {"
-    "  background: rgba(255,255,255,0.15);"
-    "  border-radius: 16px;"
-    "  padding: 0;"
-    "  min-width: 48px;"
-    "  min-height: 48px;"
-    "  border: none;"
-    "  transition: border-radius 200ms, background 200ms;"
-    "}"
-    "button:hover {"
-    "  background: #f25858;"
-    "  border-radius: 12px;"
-    "}"
-    "button.active {"
-    "  background: #f25858;"
-    "  border-radius: 12px;"
-    "}");
-gtk_style_context_add_provider(gtk_widget_get_style_context(dmsbutton),
-    GTK_STYLE_PROVIDER(dmsprovider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+	gtk_icon_theme_set_search_path(theme, paths);
 
-g_object_set_data(G_OBJECT(dmsbtn), "button", dmsbutton);
-gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(dmsbtn), dmsbutton);
-gtk_list_box_append(GTK_LIST_BOX(GuildList), dmsbtn);
+	GtkWidget *dmsbtnimg = gtk_image_new_from_icon_name("dms-symbolic");
+	gtk_widget_add_css_class(dmsbutton, "active");
+	gtk_image_set_pixel_size(GTK_IMAGE(dmsbtnimg), 28);
+	gtk_button_set_child(GTK_BUTTON(dmsbutton), dmsbtnimg);
+	g_signal_connect(dmsbutton, "clicked", G_CALLBACK(on_dms_btn_clicked),
+					 NULL);
 
-	gtk_box_append(GTK_BOX(hbox), GuildList);
+	GtkCssProvider *dmsprovider = gtk_css_provider_new();
+	gtk_css_provider_load_from_string(
+		dmsprovider, "button {"
+					 "	color: #f25858;"
+					 "  background: rgba(255,255,255,0.15);"
+					 "  border-radius: 16px;"
+					 "  padding: 0;"
+					 "  min-width: 48px;"
+					 "  min-height: 48px;"
+					 "  border: none;"
+					 "  transition: color 200ms ease, border-radius 200ms "
+					 "ease, background 200ms ease;"
+					 "}"
+					 "button:hover {"
+					 "	color: #404040;"
+					 "  background: #f25858;"
+					 "  border-radius: 12px;"
+					 "}"
+					 "button.active {"
+					 "	color: #404040;"
+					 "  background: #f25858;"
+					 "  border-radius: 12px;"
+					 "}");
+	gtk_style_context_add_provider(gtk_widget_get_style_context(dmsbutton),
+								   GTK_STYLE_PROVIDER(dmsprovider),
+								   GTK_STYLE_PROVIDER_PRIORITY_USER);
+
+	gtk_box_append(GTK_BOX(GuildVBOX), dmsbutton);
+
+	gtk_box_append(GTK_BOX(GuildVBOX), GuildList);
+	gtk_widget_set_vexpand(GuildList, 1);
+
+	GtkWidget *insertbtn = gtk_button_new();
+	gtk_widget_set_size_request(insertbtn, 52, 52);
+
+	GtkWidget *insertbtnimg = gtk_image_new_from_icon_name("insert-symbolic");
+	gtk_widget_add_css_class(insertbtnimg, "active");
+	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 28);
+	gtk_button_set_child(GTK_BUTTON(insertbtn), insertbtnimg);
+	gtk_style_context_add_provider(gtk_widget_get_style_context(insertbtn),
+								   GTK_STYLE_PROVIDER(dmsprovider),
+								   GTK_STYLE_PROVIDER_PRIORITY_USER);
+	gtk_box_append(GTK_BOX(GuildVBOX), insertbtn);
+
+	gtk_box_append(GTK_BOX(hbox), GuildVBOX);
 
 	gtk_window_set_child(GTK_WINDOW(main_window), panelhbox);
 	gtk_box_append(GTK_BOX(panelhbox), vbox);
@@ -196,7 +247,7 @@ gtk_list_box_append(GTK_LIST_BOX(GuildList), dmsbtn);
 
 	gtk_box_append(GTK_BOX(hbox), BuddyList);
 	gtk_list_box_set_selection_mode(GTK_LIST_BOX(BuddyList),
-									GTK_SELECTION_NONE); // i need hlep
+									GTK_SELECTION_SINGLE); // i need hlep
 	g_signal_connect(BuddyList, "row-activated",
 					 G_CALLBACK(on_buddy_row_activated), NULL);
 
@@ -206,28 +257,51 @@ gtk_list_box_append(GTK_LIST_BOX(GuildList), dmsbtn);
 	gtk_widget_set_hexpand(chatscroll, TRUE);
 	gtk_widget_set_vexpand(chatscroll, TRUE);
 	chatarea = gtk_list_box_new();
+	gtk_list_box_set_selection_mode(GTK_LIST_BOX(chatarea), GTK_SELECTION_NONE);
 	gtk_widget_set_hexpand(chatarea, TRUE);
 	gtk_widget_set_vexpand(chatarea, TRUE);
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(chatscroll), chatarea);
+	gtk_box_append(GTK_BOX(chatvbox), chatscroll);
+	GtkWidget *inputhbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+	gtk_box_append(GTK_BOX(chatvbox), inputhbox);
+
+	GtkWidget *upload_btn = gtk_button_new_with_label("+");
+	gtk_box_append(GTK_BOX(inputhbox), upload_btn);
+	GtkWidget *entry = gtk_text_view_new();
+	gtk_widget_set_hexpand(entry, TRUE);
+	gtk_box_append(GTK_BOX(inputhbox), entry);
+
+	EKeyPayload *dat = malloc(sizeof(EKeyPayload));
+	dat->EntryArea = entry;
+	dat->ChatView = chatarea;
+	GtkEventController *key_controller = gtk_event_controller_key_new();
+	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(EntryKeyHandler),
+					 dat);
+	gtk_widget_add_controller(entry, GTK_EVENT_CONTROLLER(key_controller));
+
+
+
 	GtkWidget *UserDetailsBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 	char *displayName = GetDisplayName(curUsername);
 	if (!displayName) {
 		displayName = curUsername;
 	}
-	gtk_box_append(GTK_BOX(chatvbox), chatscroll);
-
-	GtkWidget *UsernameLabel = gtk_label_new(displayName);
 
 	SelfPfp = gtk_image_new_from_file(GetPfpPath(curUsername));
 	GtkCssProvider *provider = gtk_css_provider_new();
 	gtk_css_provider_load_from_string(
-		provider, "* { border: 2px solid #108020; -gtk-icon-size: 32px; }");
+		provider, "* { border: 2px solid #108020; -gtk-icon-size: 36px; }");
 
 	gtk_style_context_add_provider(gtk_widget_get_style_context(SelfPfp),
 								   GTK_STYLE_PROVIDER(provider),
 								   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	gtk_box_append(GTK_BOX(UserDetailsBox), SelfPfp);
-	gtk_box_append(GTK_BOX(UserDetailsBox), UsernameLabel);
+	GtkWidget* UsernameBox = gtk_box_new(GTK_ORIENTATION_VERTICAL,0);
+	UsernameLabel = gtk_label_new(displayName);
+	DisplayNameLabel = gtk_label_new(curUsername);
+	gtk_box_append(GTK_BOX(UserDetailsBox), UsernameBox);
+	gtk_box_append(GTK_BOX(UsernameBox), DisplayNameLabel);
+	gtk_box_append(GTK_BOX(UsernameBox), UsernameLabel);
 	gtk_box_append(GTK_BOX(vbox), UserDetailsBox);
 	GtkGesture *click = gtk_gesture_click_new();
 	g_signal_connect(click, "pressed", G_CALLBACK(UserDetailsBoxOnClick), NULL);
@@ -322,12 +396,15 @@ void onYAMPBuddyListed(cJSON *Buddies) {
 	g_idle_add(MainThreadBuddyCB, Buddies);
 }
 
-void onYAMPUserDetailsFetched(cJSON *Details) {
+static gboolean MainThreadUserDetCB(gpointer data) {
+	cJSON *Details = data;
 	char *username = cJSON_GetObjectItem(Details, "name")->valuestring;
 	char *display_name =
 		cJSON_GetObjectItem(Details, "display_name")->valuestring;
 	InsertDisplayName(username, display_name);
 	curUsername = username;
+	gtk_label_set_text(GTK_LABEL(DisplayNameLabel), display_name);
+	gtk_label_set_text(GTK_LABEL(UsernameLabel), username);
 	if (!cJSON_GetObjectItem(Details, "pfp")) {
 		InsertPfpPath(username, "./pfp.png");
 	} else {
@@ -343,6 +420,11 @@ void onYAMPUserDetailsFetched(cJSON *Details) {
 		printf("%s\n", filePath);
 		InsertPfpPath(username, filePath);
 	}
+	return G_SOURCE_REMOVE;
+}
+void onYAMPUserDetailsFetched(cJSON *Details) {
+	g_idle_add(MainThreadUserDetCB, Details);
+	FetchedUserProfile = true;
 }
 
 typedef struct {

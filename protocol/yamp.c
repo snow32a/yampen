@@ -1,16 +1,23 @@
 #include "cjson/cJSON.h"
 #include "glib.h"
 #include "glibconfig.h"
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "yamp.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <netdb.h>
-#include "yamp.h"
+#endif
 #define YAMP_PORT 5224
 extern void onYAMPBuddyListed(cJSON *Buddies);
 extern void onYAMPUserDetailsFetched(cJSON *Detail);
@@ -59,7 +66,7 @@ gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
 		retval.ChannelName = NULL;
 		retval.type = YAMP_DM;
 		retval.where = dupedwhere;
-		if (strcmp(minus+1, curUsername) == 0) {
+		if (strcmp(minus + 1, curUsername) == 0) {
 			retval.OtherGuy = safewhere;
 		} else {
 			retval.OtherGuy = minus + 1;
@@ -76,9 +83,14 @@ int YAMPSend(int fd, void *payload, uint32_t size) {
 	send(fd, payload, size, 0);
 }
 int YAMPRecv(int fd, char **payload, uint32_t *len) {
-	if (recv(fd, len, 4, MSG_WAITALL) > 0) {
+	if (recv(fd, len, 4, 0) > 0) {
+		*len = ntohl(*len);
 		*payload = malloc(ntohl(*len));
-		recv(fd, *payload, ntohl(*len), MSG_WAITALL);
+		int totalread;
+		while (totalread < *len) {
+			int r = recv(fd, *payload + totalread, ntohl(*len), 0);
+			totalread += r;
+		}
 		return 1;
 	}
 	return 0; // server got busted by a segfault :sob:
@@ -96,38 +108,40 @@ void *YAMPRecvLoop(void *fd) {
 				if (strcmp(reqid->valuestring, "1") == 0) {
 					printf("BUDDY LISTED\n");
 					onYAMPBuddyListed(response);
-				}
-				else if (strcmp(reqid->valuestring, "0") == 0) {
+				} else if (strcmp(reqid->valuestring, "0") == 0) {
 					printf("LOGIN RESP\n");
 					if (strcmp(response->valuestring, "success") == 0) {
 						onYAMPUserDetailsFetched(
-						    cJSON_GetObjectItem(srvr, "user"));
+							cJSON_GetObjectItem(srvr, "user"));
 						onYAMPLoggedIn();
-						onYAMPSpacesFetched(cJSON_GetObjectItem(cJSON_GetObjectItem(srvr, "user"),"spaces"));
+						onYAMPSpacesFetched(cJSON_GetObjectItem(
+							cJSON_GetObjectItem(srvr, "user"), "spaces"));
 					} else {
 						onYAMPLoginFail();
 					}
-				}
-				else if (*(reqid->valuestring) == '2') {
-					onYAMPChannelsFetched(cJSON_GetObjectItem(srvr, "response"));
-				}
-				else if (strcmp(reqid->valuestring,"GetMessageHistory") == 0) {
-					for(int i = 0; i<cJSON_GetArraySize(response);i++){
-						cJSON* msg = cJSON_GetArrayItem(response,i);
-						onYAMPReceiveIM(cJSON_GetObjectItem(msg, "author")->valuestring,cJSON_GetObjectItem(msg, "where")->valuestring,cJSON_GetObjectItem(msg, "content")->valuestring);
+				} else if (*(reqid->valuestring) == '2') {
+					onYAMPChannelsFetched(
+						cJSON_GetObjectItem(srvr, "response"));
+				} else if (strcmp(reqid->valuestring, "GetMessageHistory") ==
+						   0) {
+					for (int i = 0; i < cJSON_GetArraySize(response); i++) {
+						cJSON *msg = cJSON_GetArrayItem(response, i);
+						onYAMPReceiveIM(
+							cJSON_GetObjectItem(msg, "author")->valuestring,
+							cJSON_GetObjectItem(msg, "where")->valuestring,
+							cJSON_GetObjectItem(msg, "content")->valuestring);
 					}
 				}
-			}
-			else if (strcmp(type->valuestring, "event") == 0) {
+			} else if (strcmp(type->valuestring, "event") == 0) {
 				cJSON *event = cJSON_GetObjectItem(srvr, "event");
 				cJSON *eventdata = cJSON_GetObjectItem(srvr, "data");
 				if (strcmp(event->valuestring, "recvim") == 0) {
 					char *content =
-					    cJSON_GetObjectItem(eventdata, "content")->valuestring;
+						cJSON_GetObjectItem(eventdata, "content")->valuestring;
 					char *author =
-					    cJSON_GetObjectItem(eventdata, "author")->valuestring;
+						cJSON_GetObjectItem(eventdata, "author")->valuestring;
 					char *where =
-					    cJSON_GetObjectItem(eventdata, "where")->valuestring;
+						cJSON_GetObjectItem(eventdata, "where")->valuestring;
 					onYAMPReceiveIM(author, where, content);
 				}
 			}
@@ -161,7 +175,11 @@ int YAMPConnect(const char *server, int *socket_out) {
 
 	if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
 		freeaddrinfo(res);
+#ifdef _WIN32
+		closesocket(sock);
+#else
 		close(sock);
+#endif
 		return -1;
 	}
 
@@ -210,7 +228,7 @@ int YAMPSendIM(int fd, char *where, char *content) {
 int YAMPListSpaceChannels(int fd, char *space) {
 	cJSON *payload = cJSON_CreateObject();
 	char *reqid = malloc(strlen(space) + 1 + 1);
-	sprintf(reqid,"2%s",space);
+	sprintf(reqid, "2%s", space);
 	cJSON_AddStringToObject(payload, "reqid", reqid);
 	cJSON_AddStringToObject(payload, "space", space);
 	cJSON_AddStringToObject(payload, "type", "request");
@@ -222,6 +240,7 @@ int YAMPListSpaceChannels(int fd, char *space) {
 	return 0;
 }
 int YAMPGetMessageHistory(int fd, char *where) {
+	// printf("trigger\n");
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "GetMessageHistory");
 	cJSON_AddStringToObject(payload, "where", where);
