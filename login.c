@@ -19,8 +19,8 @@ GtkWidget *username_entry;
 GtkWidget *password_entry;
 char *curUsername;
 int mainsock;
-int NwLogin(char* uns, char* password){
-		char *username;
+int NwLogin(char *uns, char *password) {
+	char *username;
 	char *server;
 	if (strlen(password) < 1) {
 		GtkAlertDialog *dialog =
@@ -55,8 +55,7 @@ GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 		gtk_entry_get_buffer(GTK_ENTRY(password_entry)));
 	char *cfpath =
 		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
-	char *cpath =
-		g_build_filename(g_get_user_config_dir(), "yampen", NULL);
+	char *cpath = g_build_filename(g_get_user_config_dir(), "yampen", NULL);
 
 	if (mkdir(cpath, 0755) == -1 && errno != EEXIST) {
 		perror("mkdir");
@@ -66,35 +65,35 @@ GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 	if (fd == -1) {
 		perror("open");
 	}
-	write(fd,uns,strlen(uns));
+	write(fd, uns, strlen(uns));
 	close(fd);
 	NwLogin(uns, password);
-		GError *error = NULL;
+	GError *error = NULL;
+#if HAVE_LIBSECRET
 	int ok = secret_password_store_sync(&AppSchema, SECRET_COLLECTION_DEFAULT,
-							   "Yampen account password", password, NULL,
-							   &error, "username", uns, NULL);
+										"Yampen account password", password,
+										NULL, &error, "username", uns, NULL);
+	if (!ok) {
+		fprintf(stderr, "secret store failed: %s\n",
+				error ? error->message : "unknown error");
 
-if (!ok) {
-    fprintf(stderr, "secret store failed: %s\n",
-            error ? error->message : "unknown error");
-
-    if (error)
-        g_error_free(error);
-} else {
-    printf("password stored successfully\n");
+		if (error)
+			g_error_free(error);
+	} else {
+		printf("password stored successfully\n");
+	}
+#endif
 }
-}
-gboolean CloseLoginDialog(gpointer data)
-{
-    if (login_window != NULL) {
-        gtk_window_destroy(GTK_WINDOW(login_window));
-        login_window = NULL;
-    }
+gboolean CloseLoginDialog(gpointer data) {
+	if (login_window != NULL) {
+		gtk_window_destroy(GTK_WINDOW(login_window));
+		login_window = NULL;
+	}
 
-    return G_SOURCE_REMOVE;
+	return G_SOURCE_REMOVE;
 }
 gboolean DoLoggedIn(gpointer data) {
-    g_application_release(G_APPLICATION(g_application_get_default()));
+	g_application_release(G_APPLICATION(g_application_get_default()));
 	YAMPListBuddies(mainsock);
 	StartMainIMWindow();
 	CloseLoginDialog(NULL);
@@ -113,12 +112,14 @@ gboolean ErrorOnLoginFail(gpointer data) {
 void onYAMPLoginFail() {
 	g_idle_add_full(G_PRIORITY_LOW, ErrorOnLoginFail, NULL, NULL);
 }
-typedef struct{
-	char* uns;
-	char* pwd;
+
+#if HAVE_LIBSECRET
+typedef struct {
+	char *uns;
+	char *pwd;
 } SavedCred;
-int GetSavedLoginData(SavedCred* out){
-		char *cpath =
+int GetSavedLoginData(SavedCred *out) {
+	char *cpath =
 		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
 
 	int fd = open(cpath, O_RDONLY, 0);
@@ -127,13 +128,13 @@ int GetSavedLoginData(SavedCred* out){
 		return 0;
 	}
 	struct stat lustat;
-	stat(cpath,&lustat);
-	char* defusr=malloc(lustat.st_size+1);
+	stat(cpath, &lustat);
+	char *defusr = malloc(lustat.st_size + 1);
 
-	read(fd,defusr,lustat.st_size);
-	defusr[lustat.st_size]='\0';
-	out->uns=defusr;
-	if(fd==-1){
+	read(fd, defusr, lustat.st_size);
+	defusr[lustat.st_size] = '\0';
+	out->uns = defusr;
+	if (fd == -1) {
 		printf("failed to open\n");
 	}
 	close(fd);
@@ -143,22 +144,25 @@ int GetSavedLoginData(SavedCred* out){
 									NULL, // cancellable
 									&error, "username", defusr, NULL);
 	if (password != NULL) {
-		out->pwd=password;
-	}else{
+		out->pwd = password;
+	} else {
 		printf("no passwd\n");
 		return 0;
 	}
 	return 1;
 }
+#endif
 void DisplayLoginDialog(GtkApplication *app) {
+#if HAVE_LIBSECRET
 	SavedCred cred;
-	if(GetSavedLoginData(&cred)){
+	if (GetSavedLoginData(&cred)) {
 		g_application_hold(G_APPLICATION(app));
 		NwLogin(cred.uns, cred.pwd);
 		free(cred.uns);
 		secret_password_free(cred.pwd);
 		return;
 	}
+#endif
 	login_window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(login_window), "Yampen - Login");
 	gtk_window_set_default_size(GTK_WINDOW(login_window), 600, 400);

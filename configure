@@ -1,0 +1,104 @@
+#!/bin/sh
+
+# configure
+
+usage()
+{
+    echo "Usage: ./configure [linux|win32]"
+    echo
+    echo "Targets:"
+    echo "!!! You still need to set CROSS_COMPILE before compiling !!!"
+    echo "  linux       Build for Linux (gcc)"
+    echo "  win32       Build for Windows (MinGW-w64) [Skips libsecret, pkg-config, and switches to winpthreads]"
+    echo "  --help      Show this help"
+}
+
+if [ "$1" = "" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    usage
+    exit 0
+fi
+
+if [ $# -gt 1 ]; then
+    echo "configure: error: too many arguments" >&2
+    usage >&2
+    exit 1
+fi
+PLATFORM="$1"
+case "$PLATFORM" in
+    linux|win32)
+        ;;
+    *)
+        echo "configure: error: unknown platform: $PLATFORM" >&2
+        usage >&2
+        exit 1
+        ;;
+esac
+
+cat > config.mk <<EOF
+# made by configure - don't edit
+
+UNAME_S := $(uname -s)
+PLATFORM := $PLATFORM
+
+CPPFLAGS :=
+CFLAGS :=
+LDFLAGS :=
+LIBS :=
+CC :=
+EOF
+
+case "$PLATFORM" in
+    linux)
+        if ! command -v pkg-config >/dev/null 2>&1; then
+            echo "configure: error: pkg-config not found" >&2
+            exit 1
+        fi
+
+        CPPFLAGS="$(pkg-config --cflags-only-I \
+            libsecret-1 \
+            gtk4 \
+            librsvg-2.0 \
+            libcurl \
+            libcjson)"
+
+        LIBS="$(pkg-config --libs \
+            libsecret-1 \
+            gtk4 \
+            librsvg-2.0 \
+            libcurl \
+            libcjson)"
+
+        cat >> config.mk <<EOF
+CC := gcc
+CPPFLAGS += $CPPFLAGS
+CPPFLAGS += -DHAVE_LIBSECRET
+LIBS += $LIBS
+EOF
+        ;;
+
+    win32)
+
+        cat >> config.mk <<EOF
+CC := gcc
+CPPFLAGS += -D_WIN32
+
+LIBS += -lrsvg-2
+LIBS += -lcurl
+LIBS += -lcjson
+LIBS += -lgtk-4
+LIBS += -lpangocairo-1.0
+LIBS += -lpango-1.0
+LIBS += -lharfbuzz
+LIBS += -lgdk_pixbuf-2.0
+LIBS += -lcairo-gobject
+LIBS += -lcairo
+LIBS += -lvulkan
+LIBS += -lgraphene-1.0
+LIBS += -lgio-2.0
+LIBS += -lgobject-2.0
+LIBS += -lglib-2.0
+EOF
+        ;;
+esac
+
+echo "Configured for: $PLATFORM"

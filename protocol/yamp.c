@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+typedef SOCKET socket_fd;
 #else
 #include <sys/socket.h>
 #include <unistd.h>
@@ -77,7 +78,7 @@ gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
 	}
 }
 extern void onYAMPReceiveIM(char *username, char *where, char *data);
-int YAMPSend(int fd, void *payload, uint32_t size) {
+int YAMPSend(socket_fd fd, void *payload, uint32_t size) {
 	uint32_t NlSize = htonl(size);
 	send(fd, &NlSize, 4, 0);
 	send(fd, payload, size, 0);
@@ -85,12 +86,13 @@ int YAMPSend(int fd, void *payload, uint32_t size) {
 int YAMPRecv(int fd, char **payload, uint32_t *len) {
 	if (recv(fd, len, 4, 0) > 0) {
 		*len = ntohl(*len);
-		*payload = malloc(ntohl(*len));
-		int totalread;
+		*payload = malloc(*len+1);
+		int totalread=0;
 		while (totalread < *len) {
-			int r = recv(fd, *payload + totalread, ntohl(*len), 0);
+			int r = recv(fd, *payload + totalread, *len, 0);
 			totalread += r;
 		}
+		(*payload)[*len]='\0';
 		return 1;
 	}
 	return 0; // server got busted by a segfault :sob:
@@ -99,7 +101,7 @@ void *YAMPRecvLoop(void *fd) {
 	uint32_t len;
 	char *payload;
 	while (1) {
-		if (YAMPRecv(*(int *)fd, &payload, &len)) {
+		if (YAMPRecv(*(socket_fd *)fd, &payload, &len)) {
 			cJSON *srvr = cJSON_Parse(payload);
 			cJSON *type = cJSON_GetObjectItem(srvr, "type");
 			if (strcmp(type->valuestring, "response") == 0) {
@@ -192,7 +194,7 @@ int YAMPConnect(const char *server, int *socket_out) {
 	pthread_create(recvthread, NULL, YAMPRecvLoop, argsock);
 	return 0;
 }
-int YAMPLogin(int fd, char *username, char *password) {
+int YAMPLogin(socket_fd fd, char *username, char *password) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "username", username);
 	cJSON_AddStringToObject(payload, "password", password);
@@ -200,20 +202,20 @@ int YAMPLogin(int fd, char *username, char *password) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "login");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload) + 1);
+	YAMPSend(fd, finalPayload, strlen(finalPayload));
 	return 0;
 }
-int YAMPListBuddies(int fd) {
+int YAMPListBuddies(socket_fd fd) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "1");
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "buddylist");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload) + 1);
+	YAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPSendIM(int fd, char *where, char *content) {
+int YAMPSendIM(socket_fd fd, char *where, char *content) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", where);
 	cJSON_AddStringToObject(payload, "where", where);
@@ -221,11 +223,11 @@ int YAMPSendIM(int fd, char *where, char *content) {
 	cJSON_AddStringToObject(payload, "endpoint", "sendim");
 	cJSON_AddStringToObject(payload, "content", content);
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload) + 1);
+	YAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPListSpaceChannels(int fd, char *space) {
+int YAMPListSpaceChannels(socket_fd fd, char *space) {
 	cJSON *payload = cJSON_CreateObject();
 	char *reqid = malloc(strlen(space) + 1 + 1);
 	sprintf(reqid, "2%s", space);
@@ -234,12 +236,12 @@ int YAMPListSpaceChannels(int fd, char *space) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "getchannels");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload) + 1);
+	YAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	free(reqid);
 	return 0;
 }
-int YAMPGetMessageHistory(int fd, char *where) {
+int YAMPGetMessageHistory(socket_fd fd, char *where) {
 	// printf("trigger\n");
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "GetMessageHistory");
@@ -247,7 +249,7 @@ int YAMPGetMessageHistory(int fd, char *where) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "GetMessageHistory");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload) + 1);
+	YAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
