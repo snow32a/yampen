@@ -27,6 +27,7 @@ extern void onYAMPChannelsFetched(cJSON *Channels);
 extern void onYAMPLoggedIn();
 extern void onYAMPLoginFail();
 extern void onYAMPDisconnected();
+extern void onYAMPStatusUpdate(char* name, status stat);
 char *MakeDMChannel(const char *a, const char *b) {
 	if (strcmp(a, b) < 0)
 		return g_strdup_printf("%s|%s", a, b);
@@ -145,6 +146,17 @@ void *YAMPRecvLoop(void *fd) {
 					char *where =
 						cJSON_GetObjectItem(eventdata, "where")->valuestring;
 					onYAMPReceiveIM(author, where, content);
+				} else if (strcmp(event->valuestring, "StatusUpdate") == 0) {
+					cJSON* ustatus =
+						cJSON_GetObjectItem(eventdata, "status");
+					char *user =
+						cJSON_GetObjectItem(eventdata, "name")->valuestring;
+					status pstatus;
+					pstatus.status=cJSON_GetObjectItem(ustatus, "status")->valuestring;
+					pstatus.RPCDesc=cJSON_GetObjectItem(ustatus, "RPCDesc")->valuestring;
+					pstatus.RPCIcon=cJSON_GetObjectItem(ustatus, "RPCIcon")->valuestring;
+					pstatus.RPCName=cJSON_GetObjectItem(ustatus, "RPCName")->valuestring;
+					onYAMPStatusUpdate(user,pstatus);
 				}
 			}
 			free(payload);

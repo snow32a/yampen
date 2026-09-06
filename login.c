@@ -49,10 +49,10 @@ int NwLogin(char *uns, char *password) {
 }
 GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 	printf("Logging in bleh\n");
-	char *uns = gtk_entry_buffer_get_text(
-		gtk_entry_get_buffer(GTK_ENTRY(username_entry)));
-	char *password = gtk_entry_buffer_get_text(
-		gtk_entry_get_buffer(GTK_ENTRY(password_entry)));
+	char *uns = strdup(gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(username_entry))));
+	char *password = strdup(gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(password_entry))));
 	char *cfpath =
 		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
 	char *cpath = g_build_filename(g_get_user_config_dir(), "yampen", NULL);
@@ -83,6 +83,8 @@ GCallback cb_LoginBtn(GtkWidget *self, gpointer UserData) {
 		printf("password stored successfully\n");
 	}
 #endif
+	free(uns);
+	free(password);
 }
 gboolean CloseLoginDialog(gpointer data) {
 	if (login_window != NULL) {
@@ -153,10 +155,10 @@ int GetSavedLoginData(SavedCred *out) {
 }
 #endif
 void DisplayLoginDialog(GtkApplication *app) {
+	g_application_hold(G_APPLICATION(app));
 #if HAVE_LIBSECRET
 	SavedCred cred;
 	if (GetSavedLoginData(&cred)) {
-		g_application_hold(G_APPLICATION(app));
 		NwLogin(cred.uns, cred.pwd);
 		free(cred.uns);
 		secret_password_free(cred.pwd);

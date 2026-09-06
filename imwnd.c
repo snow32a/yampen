@@ -134,6 +134,56 @@ int MainThreadChannelCB(gpointer data) {
 
 	return G_SOURCE_REMOVE;
 }
+typedef struct {
+	char *username;
+	status stat;
+} StatusUpdatePayload;
+
+static const char *StatusToColor(const char *statusStr) {
+	if (strcmp(statusStr, "online") == 0) return "108020";
+	if (strcmp(statusStr, "dnd") == 0) return "801020";
+	if (strcmp(statusStr, "developing") == 0) return "00FFFF";
+	if (strcmp(statusStr, "drawing") == 0) return "0080FF";
+	if (strcmp(statusStr, "gaming") == 0) return "FF8000";
+	return "808080";
+}
+
+static gboolean MainThreadStatusCB(gpointer data) {
+	StatusUpdatePayload *payload = data;
+
+	for (GtkWidget *row = gtk_widget_get_first_child(BuddyList); row;
+		 row = gtk_widget_get_next_sibling(row)) {
+		GtkWidget *itemBox = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
+		GtkWidget *pfp = gtk_widget_get_first_child(itemBox);
+		GtkWidget *label = gtk_widget_get_next_sibling(pfp);
+
+		const char *rowUsername = g_object_get_data(G_OBJECT(label), "username");
+		if (rowUsername && strcmp(rowUsername, payload->username) == 0) {
+			const char *color = StatusToColor(payload->stat.status);
+			GtkCssProvider *provider = gtk_css_provider_new();
+			char style[64];
+			snprintf(style, sizeof(style),
+					 "image { border: 2px solid #%s; -gtk-icon-size: 32px; }",
+					 color);
+			gtk_css_provider_load_from_string(provider, style);
+			gtk_style_context_add_provider(gtk_widget_get_style_context(pfp),
+										   GTK_STYLE_PROVIDER(provider),
+										   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+			break;
+		}
+	}
+
+	free(payload->username);
+	free(payload);
+	return G_SOURCE_REMOVE;
+}
+
+void onYAMPStatusUpdate(char *name, status stat) {
+	StatusUpdatePayload *payload = malloc(sizeof(StatusUpdatePayload));
+	payload->username = strdup(name);
+	payload->stat = stat;
+	g_idle_add(MainThreadStatusCB, payload);
+}
 void onYAMPChannelsFetched(cJSON *Channels) {
 	g_idle_add(MainThreadChannelCB, Channels);
 }

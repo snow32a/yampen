@@ -17,6 +17,19 @@ typedef struct {
 	char *GuildName; // Above but for guilds!
 	char *ChannelName; // same same, but differeeeent :sob:
 } chat;
+typedef struct{
+	char* status;
+	char* RPCName;
+	char* RPCDesc;
+	char* RPCIcon;
+} status;
+typedef struct {
+	char *username;
+	char* displayname;
+	char* description;
+	char* pfp;
+	status status;
+} user;
 
 int YAMPConnect(const char *server, int *socket_out);
 int SplitAddress(char *address, char **username, char **server);
