@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <openssl/ssl.h>
 #include "yamp.h"
 
 #ifdef _WIN32
@@ -19,7 +20,7 @@ typedef SOCKET socket_fd;
 #include <netinet/in.h>
 #include <netdb.h>
 #endif
-#define YAMP_PORT 5224
+#define YAMP_PORT 5225
 extern void onYAMPBuddyListed(cJSON *Buddies);
 extern void onYAMPUserDetailsFetched(cJSON *Detail);
 extern void onYAMPSpacesFetched(cJSON *Spaces);
@@ -27,7 +28,7 @@ extern void onYAMPChannelsFetched(cJSON *Channels);
 extern void onYAMPLoggedIn();
 extern void onYAMPLoginFail();
 extern void onYAMPDisconnected();
-extern void onYAMPStatusUpdate(char* name, status stat);
+extern void onYAMPStatusUpdate(char *name, status stat);
 char *MakeDMChannel(const char *a, const char *b) {
 	if (strcmp(a, b) < 0)
 		return g_strdup_printf("%s|%s", a, b);
@@ -87,22 +88,42 @@ int YAMPSend(socket_fd fd, void *payload, uint32_t size) {
 int YAMPRecv(int fd, char **payload, uint32_t *len) {
 	if (recv(fd, len, 4, 0) > 0) {
 		*len = ntohl(*len);
-		*payload = malloc(*len+1);
-		int totalread=0;
+		*payload = malloc(*len + 1);
+		int totalread = 0;
 		while (totalread < *len) {
 			int r = recv(fd, *payload + totalread, *len, 0);
 			totalread += r;
 		}
-		(*payload)[*len]='\0';
+		(*payload)[*len] = '\0';
 		return 1;
 	}
 	return 0; // server got busted by a segfault :sob:
 }
+int TLSYAMPSend(SSL *fd, void *payload, uint32_t size) {
+	uint32_t NlSize = htonl(size);
+	SSL_write(fd, &NlSize, 4);
+	return SSL_write(fd, payload, size);
+}
+int TLSYAMPRecv(SSL *fd, char **payload, uint32_t *len) {
+	if (SSL_read(fd, len, 4) > 0) {
+		*len = ntohl(*len);
+		*payload = malloc(*len + 1);
+		int totalread = 0;
+		while (totalread < *len) {
+			int r = SSL_read(fd, *payload + totalread, *len);
+			totalread += r;
+		}
+		(*payload)[*len] = '\0';
+		return 1;
+	}
+	return 0;
+}
 void *YAMPRecvLoop(void *fd) {
+
 	uint32_t len;
 	char *payload;
 	while (1) {
-		if (YAMPRecv(*(socket_fd *)fd, &payload, &len)) {
+		if (TLSYAMPRecv(fd, &payload, &len)) {
 			cJSON *srvr = cJSON_Parse(payload);
 			cJSON *type = cJSON_GetObjectItem(srvr, "type");
 			if (strcmp(type->valuestring, "response") == 0) {
@@ -147,16 +168,19 @@ void *YAMPRecvLoop(void *fd) {
 						cJSON_GetObjectItem(eventdata, "where")->valuestring;
 					onYAMPReceiveIM(author, where, content);
 				} else if (strcmp(event->valuestring, "StatusUpdate") == 0) {
-					cJSON* ustatus =
-						cJSON_GetObjectItem(eventdata, "status");
+					cJSON *ustatus = cJSON_GetObjectItem(eventdata, "status");
 					char *user =
 						cJSON_GetObjectItem(eventdata, "name")->valuestring;
 					status pstatus;
-					pstatus.status=cJSON_GetObjectItem(ustatus, "status")->valuestring;
-					pstatus.RPCDesc=cJSON_GetObjectItem(ustatus, "RPCDesc")->valuestring;
-					pstatus.RPCIcon=cJSON_GetObjectItem(ustatus, "RPCIcon")->valuestring;
-					pstatus.RPCName=cJSON_GetObjectItem(ustatus, "RPCName")->valuestring;
-					onYAMPStatusUpdate(user,pstatus);
+					pstatus.status =
+						cJSON_GetObjectItem(ustatus, "status")->valuestring;
+					pstatus.RPCDesc =
+						cJSON_GetObjectItem(ustatus, "RPCDesc")->valuestring;
+					pstatus.RPCIcon =
+						cJSON_GetObjectItem(ustatus, "RPCIcon")->valuestring;
+					pstatus.RPCName =
+						cJSON_GetObjectItem(ustatus, "RPCName")->valuestring;
+					onYAMPStatusUpdate(user, pstatus);
 				}
 			}
 			free(payload);
@@ -167,7 +191,7 @@ void *YAMPRecvLoop(void *fd) {
 	}
 	return 0;
 }
-int YAMPConnect(const char *server, int *socket_out) {
+int YAMPConnect(const char *server, int *fd_out, SSL **socket_out) {
 	struct addrinfo hints = {0}, *res = NULL;
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -199,14 +223,30 @@ int YAMPConnect(const char *server, int *socket_out) {
 
 	freeaddrinfo(res);
 
-	*socket_out = sock;
-	int *argsock = malloc(sizeof(int));
-	*argsock = sock;
+	*fd_out = sock;
+	SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+	SSL *sslsock = SSL_new(ctx);
+	SSL_set_fd(sslsock, sock);
+	int ret = SSL_connect(sslsock);
+	if (ret != 1) {
+		int sslerr = SSL_get_error(sslsock, ret);
+		fprintf(stderr, "SSL_connect failed, SSL_get_error=%d\n", sslerr);
+		SSL_free(sslsock);
+		SSL_CTX_free(ctx);
+#ifdef _WIN32
+		closesocket(sock);
+#else
+		close(sock);
+#endif
+		return -1;
+	}
+	*socket_out = sslsock;
 	pthread_t *recvthread = malloc(sizeof(pthread_t));
-	pthread_create(recvthread, NULL, YAMPRecvLoop, argsock);
+	pthread_create(recvthread, NULL, YAMPRecvLoop, sslsock);
+
 	return 0;
 }
-int YAMPLogin(socket_fd fd, char *username, char *password) {
+int YAMPLogin(SSL *fd, char *username, char *password) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "username", username);
 	cJSON_AddStringToObject(payload, "password", password);
@@ -214,20 +254,20 @@ int YAMPLogin(socket_fd fd, char *username, char *password) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "login");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload));
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	return 0;
 }
-int YAMPListBuddies(socket_fd fd) {
+int YAMPListBuddies(SSL *fd) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "1");
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "buddylist");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload));
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPSendIM(socket_fd fd, char *where, char *content) {
+int YAMPSendIM(SSL *fd, char *where, char *content) {
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", where);
 	cJSON_AddStringToObject(payload, "where", where);
@@ -235,11 +275,11 @@ int YAMPSendIM(socket_fd fd, char *where, char *content) {
 	cJSON_AddStringToObject(payload, "endpoint", "sendim");
 	cJSON_AddStringToObject(payload, "content", content);
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload));
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPListSpaceChannels(socket_fd fd, char *space) {
+int YAMPListSpaceChannels(SSL *fd, char *space) {
 	cJSON *payload = cJSON_CreateObject();
 	char *reqid = malloc(strlen(space) + 1 + 1);
 	sprintf(reqid, "2%s", space);
@@ -248,12 +288,12 @@ int YAMPListSpaceChannels(socket_fd fd, char *space) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "getchannels");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload));
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	free(reqid);
 	return 0;
 }
-int YAMPGetMessageHistory(socket_fd fd, char *where) {
+int YAMPGetMessageHistory(SSL *fd, char *where) {
 	// printf("trigger\n");
 	cJSON *payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "GetMessageHistory");
@@ -261,7 +301,7 @@ int YAMPGetMessageHistory(socket_fd fd, char *where) {
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "GetMessageHistory");
 	char *finalPayload = cJSON_Print(payload);
-	YAMPSend(fd, finalPayload, strlen(finalPayload));
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }

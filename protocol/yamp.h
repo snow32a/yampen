@@ -30,13 +30,13 @@ typedef struct {
 	char* pfp;
 	status status;
 } user;
-
-int YAMPConnect(const char *server, int *socket_out);
+#include <openssl/ssl.h>
+int YAMPConnect(const char *server, int *fd_out, SSL **socket_out);
 int SplitAddress(char *address, char **username, char **server);
-int YAMPLogin(socket_fd fd, char *username, char *password);
-int YAMPListBuddies(socket_fd fd);
-int YAMPSendIM(socket_fd fd, char *where, char *content);
-int YAMPListSpaceChannels(socket_fd fd, char *space);
+int YAMPLogin(SSL* fd, char *username, char *password);
+int YAMPListBuddies(SSL* fd);
+int YAMPSendIM(SSL* fd, char *where, char *content);
+int YAMPListSpaceChannels(SSL* fd, char *space);
 char *MakeDMChannel(const char *a, const char *b);
 gboolean YAMPProcessWhere(char *where, char *curUsername, chat* out);
-int YAMPGetMessageHistory(socket_fd fd, char *where);
+int YAMPGetMessageHistory(SSL* fd, char *where);

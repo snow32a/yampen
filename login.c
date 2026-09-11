@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <openssl/ssl.h>
 const SecretSchema AppSchema = {
 	"xyz.snow32.yampen",
 	SECRET_SCHEMA_NONE,
@@ -18,7 +19,8 @@ GtkWidget *login_window;
 GtkWidget *username_entry;
 GtkWidget *password_entry;
 char *curUsername;
-int mainsock;
+int mainfd;
+SSL* mainsock;
 int NwLogin(char *uns, char *password) {
 	char *username;
 	char *server;
@@ -35,7 +37,8 @@ int NwLogin(char *uns, char *password) {
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
 		return 0;
 	}
-	int ConnectStatus = YAMPConnect(server, &mainsock);
+	int mainfd;
+	int ConnectStatus = YAMPConnect(server, &mainfd, &mainsock);
 	if (ConnectStatus < 0) {
 		GtkAlertDialog *dialog = gtk_alert_dialog_new(
 			"Failed connecting to the specified server!\n");

@@ -226,7 +226,7 @@ void StartMainIMWindow() {
 	GtkIconTheme *theme =
 		gtk_icon_theme_get_for_display(gdk_display_get_default());
 
-	const char *paths[] = {"/home/snow32/Projects/yampen/assets/icons", NULL};
+	const char *paths[] = {"assets/icons", NULL};
 
 	gtk_icon_theme_set_search_path(theme, paths);
 
