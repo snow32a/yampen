@@ -151,11 +151,19 @@ static const char *StatusToColor(const char *statusStr) {
 static gboolean MainThreadStatusCB(gpointer data) {
 	StatusUpdatePayload *payload = data;
 
+	if (!listmode) {
+		free(payload->username);
+		free(payload);
+		return G_SOURCE_REMOVE;
+	}
+
 	for (GtkWidget *row = gtk_widget_get_first_child(BuddyList); row;
 		 row = gtk_widget_get_next_sibling(row)) {
 		GtkWidget *itemBox = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
 		GtkWidget *pfp = gtk_widget_get_first_child(itemBox);
+		if (!pfp) continue;
 		GtkWidget *label = gtk_widget_get_next_sibling(pfp);
+		if (!label) continue;
 
 		const char *rowUsername = g_object_get_data(G_OBJECT(label), "username");
 		if (rowUsername && strcmp(rowUsername, payload->username) == 0) {
