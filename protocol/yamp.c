@@ -21,15 +21,15 @@ typedef SOCKET socket_fd;
 #include <netdb.h>
 #endif
 #define YAMP_PORT 5225
-extern void onYAMPBuddyListed(cJSON *Buddies);
-extern void onYAMPUserDetailsFetched(cJSON *Detail);
-extern void onYAMPSpacesFetched(cJSON *Spaces);
-extern void onYAMPChannelsFetched(cJSON *Channels);
+extern void onYAMPBuddyListed(cJSON* Buddies);
+extern void onYAMPUserDetailsFetched(cJSON* Detail);
+extern void onYAMPSpacesFetched(cJSON* Spaces);
+extern void onYAMPChannelsFetched(cJSON* Channels);
 extern void onYAMPLoggedIn();
 extern void onYAMPLoginFail();
 extern void onYAMPDisconnected();
-extern void onYAMPStatusUpdate(char *name, status stat);
-char *MakeDMChannel(const char *a, const char *b) {
+extern void onYAMPStatusUpdate(char* name, status stat);
+char* MakeDMChannel(const char* a, const char* b) {
 	if (strcmp(a, b) < 0)
 		return g_strdup_printf("%s|%s", a, b);
 	else
@@ -41,13 +41,13 @@ char *MakeDMChannel(const char *a, const char *b) {
 ///  GUILDS:              DMS:         ///
 /// ^guildName#channel    aguy-boi     ///
 //////////////////////////////////////////
-gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
-	char *dupedwhere = strdup(where);
-	char *safewhere = strdup(where);
+gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out) {
+	char* dupedwhere = strdup(where);
+	char* safewhere = strdup(where);
 	chat retval = {0};
 	if (*where == '^') {
 		// GUILD PROBABLY
-		char *hashtag = strchr(safewhere, '#');
+		char* hashtag = strchr(safewhere, '#');
 		if (!hashtag) {
 			return FALSE;
 		}
@@ -61,7 +61,7 @@ gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
 		return TRUE;
 	} else {
 		// Could be a damn DM?
-		char *minus = strchr(safewhere, '|');
+		char* minus = strchr(safewhere, '|');
 		if (!minus) {
 			return FALSE; // nah it wasnt anything LMFAO
 		}
@@ -79,13 +79,13 @@ gboolean YAMPProcessWhere(char *where, char *curUsername, chat *out) {
 		return TRUE;
 	}
 }
-extern void onYAMPReceiveIM(char *username, char *where, char *data);
-int YAMPSend(socket_fd fd, void *payload, uint32_t size) {
+extern void onYAMPReceiveIM(char* username, char* where, char* data);
+int YAMPSend(socket_fd fd, void* payload, uint32_t size) {
 	uint32_t NlSize = htonl(size);
 	send(fd, &NlSize, 4, 0);
 	send(fd, payload, size, 0);
 }
-int YAMPRecv(int fd, char **payload, uint32_t *len) {
+int YAMPRecv(int fd, char** payload, uint32_t* len) {
 	if (recv(fd, len, 4, 0) > 0) {
 		*len = ntohl(*len);
 		*payload = malloc(*len + 1);
@@ -99,12 +99,12 @@ int YAMPRecv(int fd, char **payload, uint32_t *len) {
 	}
 	return 0; // server got busted by a segfault :sob:
 }
-int TLSYAMPSend(SSL *fd, void *payload, uint32_t size) {
+int TLSYAMPSend(SSL* fd, void* payload, uint32_t size) {
 	uint32_t NlSize = htonl(size);
 	SSL_write(fd, &NlSize, 4);
 	return SSL_write(fd, payload, size);
 }
-int TLSYAMPRecv(SSL *fd, char **payload, uint32_t *len) {
+int TLSYAMPRecv(SSL* fd, char** payload, uint32_t* len) {
 	if (SSL_read(fd, len, 4) > 0) {
 		*len = ntohl(*len);
 		*payload = malloc(*len + 1);
@@ -118,23 +118,24 @@ int TLSYAMPRecv(SSL *fd, char **payload, uint32_t *len) {
 	}
 	return 0;
 }
-void *YAMPRecvLoop(void *fd) {
+void* YAMPRecvLoop(void* fd) {
 
 	uint32_t len;
-	char *payload;
+	char* payload;
 	while (1) {
 		if (TLSYAMPRecv(fd, &payload, &len)) {
-			cJSON *srvr = cJSON_Parse(payload);
-			cJSON *type = cJSON_GetObjectItem(srvr, "type");
+			cJSON* srvr = cJSON_Parse(payload);
+			cJSON* type = cJSON_GetObjectItem(srvr, "type");
+			int success = cJSON_IsTrue(cJSON_GetObjectItem(srvr, "success"));
 			if (strcmp(type->valuestring, "response") == 0) {
-				cJSON *reqid = cJSON_GetObjectItem(srvr, "reqid");
-				cJSON *response = cJSON_GetObjectItem(srvr, "response");
+				cJSON* reqid = cJSON_GetObjectItem(srvr, "reqid");
+				cJSON* response = cJSON_GetObjectItem(srvr, "response");
 				if (strcmp(reqid->valuestring, "1") == 0) {
 					printf("BUDDY LISTED\n");
 					onYAMPBuddyListed(response);
 				} else if (strcmp(reqid->valuestring, "0") == 0) {
 					printf("LOGIN RESP\n");
-					if (strcmp(response->valuestring, "success") == 0) {
+					if (success) {
 						onYAMPUserDetailsFetched(
 							cJSON_GetObjectItem(srvr, "user"));
 						onYAMPLoggedIn();
@@ -149,27 +150,28 @@ void *YAMPRecvLoop(void *fd) {
 				} else if (strcmp(reqid->valuestring, "GetMessageHistory") ==
 						   0) {
 					for (int i = 0; i < cJSON_GetArraySize(response); i++) {
-						cJSON *msg = cJSON_GetArrayItem(response, i);
+						cJSON* msg = cJSON_GetArrayItem(response, i);
 						onYAMPReceiveIM(
 							cJSON_GetObjectItem(msg, "author")->valuestring,
 							cJSON_GetObjectItem(msg, "where")->valuestring,
 							cJSON_GetObjectItem(msg, "content")->valuestring);
 					}
 				}
-			} else if (strcmp(type->valuestring, "event") == 0) {
-				cJSON *event = cJSON_GetObjectItem(srvr, "event");
-				cJSON *eventdata = cJSON_GetObjectItem(srvr, "data");
+			}
+			else if (strcmp(type->valuestring, "event") == 0) {
+				cJSON* event = cJSON_GetObjectItem(srvr, "event");
+				cJSON* eventdata = cJSON_GetObjectItem(srvr, "data");
 				if (strcmp(event->valuestring, "recvim") == 0) {
-					char *content =
+					char* content =
 						cJSON_GetObjectItem(eventdata, "content")->valuestring;
-					char *author =
+					char* author =
 						cJSON_GetObjectItem(eventdata, "author")->valuestring;
-					char *where =
+					char* where =
 						cJSON_GetObjectItem(eventdata, "where")->valuestring;
 					onYAMPReceiveIM(author, where, content);
 				} else if (strcmp(event->valuestring, "StatusUpdate") == 0) {
-					cJSON *ustatus = cJSON_GetObjectItem(eventdata, "status");
-					char *user =
+					cJSON* ustatus = cJSON_GetObjectItem(eventdata, "status");
+					char* user =
 						cJSON_GetObjectItem(eventdata, "name")->valuestring;
 					status pstatus;
 					pstatus.status =
@@ -191,7 +193,7 @@ void *YAMPRecvLoop(void *fd) {
 	}
 	return 0;
 }
-int YAMPConnect(const char *server, int *fd_out, SSL **socket_out) {
+int YAMPConnect(const char* server, int* fd_out, SSL** socket_out) {
 	struct addrinfo hints = {0}, *res = NULL;
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -224,8 +226,8 @@ int YAMPConnect(const char *server, int *fd_out, SSL **socket_out) {
 	freeaddrinfo(res);
 
 	*fd_out = sock;
-	SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
-	SSL *sslsock = SSL_new(ctx);
+	SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+	SSL* sslsock = SSL_new(ctx);
 	SSL_set_fd(sslsock, sock);
 	int ret = SSL_connect(sslsock);
 	if (ret != 1) {
@@ -241,73 +243,73 @@ int YAMPConnect(const char *server, int *fd_out, SSL **socket_out) {
 		return -1;
 	}
 	*socket_out = sslsock;
-	pthread_t *recvthread = malloc(sizeof(pthread_t));
+	pthread_t* recvthread = malloc(sizeof(pthread_t));
 	pthread_create(recvthread, NULL, YAMPRecvLoop, sslsock);
 
 	return 0;
 }
-int YAMPLogin(SSL *fd, char *username, char *password) {
-	cJSON *payload = cJSON_CreateObject();
+int YAMPLogin(SSL* fd, char* username, char* password) {
+	cJSON* payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "username", username);
 	cJSON_AddStringToObject(payload, "password", password);
 	cJSON_AddStringToObject(payload, "reqid", "0");
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "login");
-	char *finalPayload = cJSON_Print(payload);
+	char* finalPayload = cJSON_Print(payload);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	return 0;
 }
-int YAMPListBuddies(SSL *fd) {
-	cJSON *payload = cJSON_CreateObject();
+int YAMPListBuddies(SSL* fd) {
+	cJSON* payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "1");
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "buddylist");
-	char *finalPayload = cJSON_Print(payload);
+	char* finalPayload = cJSON_Print(payload);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPSendIM(SSL *fd, char *where, char *content) {
-	cJSON *payload = cJSON_CreateObject();
+int YAMPSendIM(SSL* fd, char* where, char* content) {
+	cJSON* payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", where);
 	cJSON_AddStringToObject(payload, "where", where);
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "sendim");
 	cJSON_AddStringToObject(payload, "content", content);
-	char *finalPayload = cJSON_Print(payload);
+	char* finalPayload = cJSON_Print(payload);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int YAMPListSpaceChannels(SSL *fd, char *space) {
-	cJSON *payload = cJSON_CreateObject();
-	char *reqid = malloc(strlen(space) + 1 + 1);
+int YAMPListSpaceChannels(SSL* fd, char* space) {
+	cJSON* payload = cJSON_CreateObject();
+	char* reqid = malloc(strlen(space) + 1 + 1);
 	sprintf(reqid, "2%s", space);
 	cJSON_AddStringToObject(payload, "reqid", reqid);
 	cJSON_AddStringToObject(payload, "space", space);
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "getchannels");
-	char *finalPayload = cJSON_Print(payload);
+	char* finalPayload = cJSON_Print(payload);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	free(reqid);
 	return 0;
 }
-int YAMPGetMessageHistory(SSL *fd, char *where) {
+int YAMPGetMessageHistory(SSL* fd, char* where) {
 	// printf("trigger\n");
-	cJSON *payload = cJSON_CreateObject();
+	cJSON* payload = cJSON_CreateObject();
 	cJSON_AddStringToObject(payload, "reqid", "GetMessageHistory");
 	cJSON_AddStringToObject(payload, "where", where);
 	cJSON_AddStringToObject(payload, "type", "request");
 	cJSON_AddStringToObject(payload, "endpoint", "GetMessageHistory");
-	char *finalPayload = cJSON_Print(payload);
+	char* finalPayload = cJSON_Print(payload);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	return 0;
 }
-int SplitAddress(char *address, char **username, char **server) {
-	char *newAddr = strdup(address);
-	char *at = strchr(newAddr, '@');
+int SplitAddress(char* address, char** username, char** server) {
+	char* newAddr = strdup(address);
+	char* at = strchr(newAddr, '@');
 	if (!at) {
 		return 0; // get gud get @
 	}

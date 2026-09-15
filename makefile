@@ -1,6 +1,6 @@
 include config.mk
 
-SRC = *.c protocol/*.c
+SRC = *.c protocol/*.c hmap/*.c
 CC = gcc
 
 CFLAGS += -Wall

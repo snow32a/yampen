@@ -3,18 +3,18 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-static void AddChild(MarkdownElement *root, MarkdownElement *child) {
+static void AddChild(MarkdownElement* root, MarkdownElement* child) {
 	root->nChildren++;
 	root->children =
-		realloc(root->children, root->nChildren * sizeof(MarkdownElement *));
+		realloc(root->children, root->nChildren * sizeof(MarkdownElement*));
 	root->children[root->nChildren - 1] = child;
 }
 
-static void FlushText(MarkdownElement *root, char **text) {
+static void FlushText(MarkdownElement* root, char** text) {
 	if (!*text)
 		return;
 
-	MarkdownElement *node = malloc(sizeof(MarkdownElement));
+	MarkdownElement* node = malloc(sizeof(MarkdownElement));
 	node->type = 0;
 	node->alt = NULL;
 	node->content = *text;
@@ -25,8 +25,8 @@ static void FlushText(MarkdownElement *root, char **text) {
 	*text = NULL;
 }
 
-static MarkdownElement *MakeTextNode(const char *str, size_t len) {
-	MarkdownElement *node = malloc(sizeof(MarkdownElement));
+static MarkdownElement* MakeTextNode(const char* str, size_t len) {
+	MarkdownElement* node = malloc(sizeof(MarkdownElement));
 	node->type = 0;
 	node->alt = NULL;
 	node->content = malloc(len + 1);
@@ -37,15 +37,15 @@ static MarkdownElement *MakeTextNode(const char *str, size_t len) {
 	return node;
 }
 
-MarkdownElement *ParseMarkdownStr(char *str) {
-	MarkdownElement *root = malloc(sizeof(MarkdownElement));
+MarkdownElement* ParseMarkdownStr(char* str) {
+	MarkdownElement* root = malloc(sizeof(MarkdownElement));
 	root->type = 0;
 	root->alt = NULL;
 	root->content = NULL;
 	root->nChildren = 0;
 	root->children = NULL;
 
-	char *text = NULL;
+	char* text = NULL;
 
 	for (int i = 0; str[i]; i++) {
 		// automatic link detection: http:// or https://
@@ -56,11 +56,11 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				j++;
 
 			size_t len = j - i;
-			char *url = malloc(len + 1);
+			char* url = malloc(len + 1);
 			memcpy(url, str + i, len);
 			url[len] = '\0';
 
-			MarkdownElement *tag = malloc(sizeof(MarkdownElement));
+			MarkdownElement* tag = malloc(sizeof(MarkdownElement));
 			tag->type = MARKDOWN_LINK;
 			tag->alt = NULL;
 			tag->content = url;
@@ -80,25 +80,25 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 			break;
 		}
 		case '[': {
-			char *closeBracket = strchr(str + i + 1, ']');
+			char* closeBracket = strchr(str + i + 1, ']');
 			if (!closeBracket || closeBracket[1] != '(')
 				break;
 
-			char *closeParen = strchr(closeBracket + 2, ')');
+			char* closeParen = strchr(closeBracket + 2, ')');
 			if (!closeParen)
 				break;
 
 			size_t labelLen = closeBracket - (str + i + 1);
-			char *label = malloc(labelLen + 1);
+			char* label = malloc(labelLen + 1);
 			memcpy(label, str + i + 1, labelLen);
 			label[labelLen] = '\0';
 
 			size_t urlLen = closeParen - (closeBracket + 2);
-			char *url = malloc(urlLen + 1);
+			char* url = malloc(urlLen + 1);
 			memcpy(url, closeBracket + 2, urlLen);
 			url[urlLen] = '\0';
 
-			MarkdownElement *tag = ParseMarkdownStr(label);
+			MarkdownElement* tag = ParseMarkdownStr(label);
 			free(label);
 			tag->type = MARKDOWN_LINK;
 			tag->content = url;
@@ -114,7 +114,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				break;
 			}
 			if (str[i + 1] == '*' && str[i + 2] == '*') {
-				char *end = strstr(str + i + 3, "***");
+				char* end = strstr(str + i + 3, "***");
 				if (!end)
 					break;
 
@@ -124,10 +124,10 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				memcpy(cont, str + i + 3, len);
 				cont[len] = '\0';
 
-				MarkdownElement *bold = ParseMarkdownStr(cont);
+				MarkdownElement* bold = ParseMarkdownStr(cont);
 				bold->type = MARKDOWN_BOLD;
 
-				MarkdownElement *italic = malloc(sizeof(MarkdownElement));
+				MarkdownElement* italic = malloc(sizeof(MarkdownElement));
 				italic->type = MARKDOWN_ITALIC;
 				italic->alt = NULL;
 				italic->content = NULL;
@@ -140,7 +140,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 
 				i = (end - str) + 2;
 			} else if (str[i + 1] == '*') {
-				char *end = strstr(str + i + 2, "**");
+				char* end = strstr(str + i + 2, "**");
 
 				if (!end)
 					break;
@@ -151,7 +151,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				memcpy(cont, str + i + 2, len);
 				cont[len] = '\0';
 
-				MarkdownElement *tag = ParseMarkdownStr(cont);
+				MarkdownElement* tag = ParseMarkdownStr(cont);
 				tag->type = MARKDOWN_BOLD;
 
 				FlushText(root, &text);
@@ -160,7 +160,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				i = (end - str) + 1;
 			} else {
 				// Italic !!!
-				char *end = strstr(str + i + 1, "*");
+				char* end = strstr(str + i + 1, "*");
 
 				if (!end)
 					break;
@@ -171,7 +171,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 				memcpy(cont, str + i + 1, len);
 				cont[len] = '\0';
 
-				MarkdownElement *tag = ParseMarkdownStr(cont);
+				MarkdownElement* tag = ParseMarkdownStr(cont);
 				tag->type = MARKDOWN_ITALIC;
 
 				FlushText(root, &text);
@@ -200,7 +200,7 @@ MarkdownElement *ParseMarkdownStr(char *str) {
 	return root;
 }
 
-void FreeMarkdownTree(MarkdownElement *tree) {
+void FreeMarkdownTree(MarkdownElement* tree) {
 	for (int i = 0; i < tree->nChildren; i++) {
 		FreeMarkdownTree(tree->children[i]);
 	}
