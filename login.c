@@ -1,27 +1,35 @@
 #include <stdio.h>
 #include <gtk/gtk.h>
 #include "login.h"
+#include "glib.h"
 #include "imwnd.h"
 #include "gtk/gtkshortcut.h"
 #include "protocol/yamp.h"
 #include "globals.h"
+#include <cjson/cJSON.h>
+#ifdef HAVE_LIBSECRET
 #include <libsecret/secret.h>
+const SecretSchema AppSchema = {
+	"xyz.snow32.yampen",
+	SECRET_SCHEMA_NONE,
+	{{"username", SECRET_SCHEMA_ATTRIBUTE_STRING}, {NULL, 0}}};
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <openssl/ssl.h>
 #include <gio/gio.h>
-const SecretSchema AppSchema = {
-	"xyz.snow32.yampen",
-	SECRET_SCHEMA_NONE,
-	{{"username", SECRET_SCHEMA_ATTRIBUTE_STRING}, {NULL, 0}}};
 GtkWidget* login_window;
 GtkWidget* username_entry;
 GtkWidget* password_entry;
 char* curUsername;
 int mainfd;
 SSL* mainsock;
+static GtkApplication* login_app;
+static int autoLoginPending;
+static char* prefillUsername;
+static void BuildLoginWindow(GtkApplication* app);
 
 int SecretServiceAvail(void) {
 	GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
@@ -52,6 +60,7 @@ int NwLogin(char* uns, char* password) {
 		GtkAlertDialog* dialog =
 			gtk_alert_dialog_new("You need to enter your password");
 		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
+		return 0;
 	}
 	if (!(SplitAddress(uns, &username, &server) && strlen(username) > 0 &&
 		  strlen(server) > 0)) {
@@ -73,6 +82,90 @@ int NwLogin(char* uns, char* password) {
 	}
 	YAMPLogin(mainsock, username, password);
 	curUsername = strdup(username);
+	return 1;
+}
+static char* pendingRegisterUsername;
+static char* pendingRegisterPassword;
+gboolean ErrorOnRegisterFail(void* data) {
+	GtkAlertDialog* dialog =
+		gtk_alert_dialog_new("Failed to register!");
+	return G_SOURCE_REMOVE;
+}
+void onYAMPRegisterResult(int success) {
+	if (!success) {
+		g_idle_add_full(G_PRIORITY_DEFAULT, ErrorOnRegisterFail, NULL, NULL);
+		return;
+	}
+
+	printf("Registration successful, logging in...\n");
+
+	YAMPLogin(mainsock, pendingRegisterUsername, pendingRegisterPassword);
+
+	curUsername = strdup(pendingRegisterUsername);
+
+	free(pendingRegisterUsername);
+	free(pendingRegisterPassword);
+
+	pendingRegisterUsername = NULL;
+	pendingRegisterPassword = NULL;
+}
+void cb_RegisterBtn(GtkWidget* self, gpointer UserData) {
+	char* uns = strdup(gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(username_entry))));
+
+	char* password = strdup(gtk_entry_buffer_get_text(
+		gtk_entry_get_buffer(GTK_ENTRY(password_entry))));
+
+	char* username;
+	char* server;
+
+	if (strlen(password) < 1) {
+		GtkAlertDialog* dialog =
+			gtk_alert_dialog_new("You need to enter your password");
+
+		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
+
+		free(uns);
+		free(password);
+		return;
+	}
+
+	if (!(SplitAddress(uns, &username, &server) && strlen(username) > 0 &&
+		  strlen(server) > 0)) {
+
+		GtkAlertDialog* dialog =
+			gtk_alert_dialog_new("Your user format seems incorrect, YAMP uses "
+								 "user@server.com style IDs");
+
+		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
+
+		free(uns);
+		free(password);
+		return;
+	}
+
+	int fd;
+
+	if (YAMPConnect(server, &fd, &mainsock) < 0) {
+		GtkAlertDialog* dialog =
+			gtk_alert_dialog_new("Failed connecting to the specified server!");
+
+		gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
+
+		free(uns);
+		free(password);
+		return;
+	}
+
+	mainfd = fd;
+
+	pendingRegisterUsername = strdup(username);
+	pendingRegisterPassword = strdup(password);
+
+	YAMPRegister(mainsock, username, password);
+
+	free(uns);
+	free(password);
 }
 GCallback cb_LoginBtn(GtkWidget* self, gpointer UserData) {
 	printf("Logging in bleh\n");
@@ -84,6 +177,9 @@ GCallback cb_LoginBtn(GtkWidget* self, gpointer UserData) {
 		g_build_filename(g_get_user_config_dir(), "yampen", "last_user", NULL);
 	char* cpath = g_build_filename(g_get_user_config_dir(), "yampen", NULL);
 
+	NwLogin(uns, password);
+#if HAVE_LIBSECRET
+	GError* error = NULL;
 	if (mkdir(cpath, 0755) == -1 && errno != EEXIST) {
 		perror("mkdir");
 	}
@@ -94,22 +190,19 @@ GCallback cb_LoginBtn(GtkWidget* self, gpointer UserData) {
 	}
 	write(fd, uns, strlen(uns));
 	close(fd);
-	NwLogin(uns, password);
-	GError* error = NULL;
-#if HAVE_LIBSECRET
-	if(SecretServiceAvail){
-	int ok = secret_password_store_sync(&AppSchema, SECRET_COLLECTION_DEFAULT,
-										"Yampen account password", password,
-										NULL, &error, "username", uns, NULL);
-	if (!ok) {
-		fprintf(stderr, "secret store failed: %s\n",
-				error ? error->message : "unknown error");
+	if (SecretServiceAvail) {
+		int ok = secret_password_store_sync(
+			&AppSchema, SECRET_COLLECTION_DEFAULT, "Yampen account password",
+			password, NULL, &error, "username", uns, NULL);
+		if (!ok) {
+			fprintf(stderr, "secret store failed: %s\n",
+					error ? error->message : "unknown error");
 
-		if (error)
-			g_error_free(error);
-	} else {
-		printf("password stored successfully\n");
-	}
+			if (error)
+				g_error_free(error);
+		} else {
+			printf("password stored successfully\n");
+		}
 	}
 #endif
 	free(uns);
@@ -123,18 +216,41 @@ gboolean CloseLoginDialog(gpointer data) {
 
 	return G_SOURCE_REMOVE;
 }
+typedef struct {
+	YampUser usr;
+	YampSpace* spaces;
+	int nspaces;
+	YampUser* incfq;
+	int fqcount;
+	YampUser* outfq;
+	int outfqcount;
+} logincbpayload;
 gboolean DoLoggedIn(gpointer data) {
+	logincbpayload* params = data;
 	g_application_release(G_APPLICATION(g_application_get_default()));
 	YAMPListBuddies(mainsock);
-	StartMainIMWindow();
+	StartMainIMWindow(params->usr, params->spaces, params->nspaces, params->incfq,
+					  params->fqcount, params->outfq, params->outfqcount);
 	CloseLoginDialog(NULL);
 	return G_SOURCE_REMOVE;
 }
-
-void onYAMPLoggedIn() {
-	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, NULL, NULL);
+void onYAMPLoggedIn(YampUser usr, YampSpace* spaces, int nspaces, YampUser* incfq, int fqcount,
+					YampUser* outfq, int outfqcount) {
+	logincbpayload* params = malloc(sizeof(logincbpayload));
+	params->usr = usr;
+	params->spaces = spaces;
+	params->nspaces = nspaces;
+	params->incfq = incfq;
+	params->fqcount = fqcount;
+	params->outfq = outfq;
+	params->outfqcount = outfqcount;
+	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, params, NULL);
 }
 gboolean ErrorOnLoginFail(gpointer data) {
+	if (autoLoginPending && login_window == NULL) {
+		autoLoginPending = 0;
+		BuildLoginWindow(login_app);
+	}
 	GtkAlertDialog* dialog =
 		gtk_alert_dialog_new("Username or password wrong!\n");
 	gtk_alert_dialog_show(dialog, GTK_WINDOW(login_window));
@@ -170,6 +286,7 @@ int GetSavedLoginData(SavedCred* out) {
 	}
 	close(fd);
 	GError* error = NULL;
+
 	gchar* password =
 		secret_password_lookup_sync(&AppSchema,
 									NULL, // cancellable
@@ -185,17 +302,10 @@ int GetSavedLoginData(SavedCred* out) {
 #endif
 void DisplayLoginDialog(GtkApplication* app) {
 	g_application_hold(G_APPLICATION(app));
-#if HAVE_LIBSECRET
-	if(SecretServiceAvail){
-	SavedCred cred;
-	if (GetSavedLoginData(&cred)) {
-		NwLogin(cred.uns, cred.pwd);
-		free(cred.uns);
-		secret_password_free(cred.pwd);
-		return;
-	}
-	}
-#endif
+	login_app = app;
+	BuildLoginWindow(app);
+}
+static void BuildLoginWindow(GtkApplication* app) {
 	login_window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(login_window), "Yampen - Login");
 	gtk_window_set_default_size(GTK_WINDOW(login_window), 600, 400);
@@ -257,6 +367,8 @@ void DisplayLoginDialog(GtkApplication* app) {
 	gtk_entry_set_placeholder_text(GTK_ENTRY(username_entry),
 								   "user@example.com");
 	gtk_widget_set_size_request(username_entry, 250, -1);
+	if (prefillUsername)
+		gtk_editable_set_text(GTK_EDITABLE(username_entry), prefillUsername);
 	gtk_box_append(GTK_BOX(loginbox), username_entry);
 
 	// passworb box
@@ -287,6 +399,8 @@ void DisplayLoginDialog(GtkApplication* app) {
 	// register button
 	GtkWidget* register_button = gtk_button_new_with_label("Register");
 	gtk_widget_set_size_request(register_button, 100, -1);
+	g_signal_connect(register_button, "clicked", G_CALLBACK(cb_RegisterBtn),
+					 NULL);
 	gtk_box_append(GTK_BOX(button_box), register_button);
 
 	gtk_window_present(GTK_WINDOW(login_window));

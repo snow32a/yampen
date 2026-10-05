@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/yampen">
+    <file>assets/icons/hicolor/scalable/symbolic/dms-symbolic.svg</file>
+    <file>assets/icons/hicolor/scalable/symbolic/insert-symbolic.svg</file>
+    <file>assets/icons/hicolor/scalable/symbolic/invite-symbolic.svg</file>
+    <file>assets/icons/hicolor/scalable/symbolic/text-channel-symbolic.svg</file>
+    <file>assets/styles.css</file>
+    <file>assets/pfps/default0.png</file>
+    <file>assets/pfps/default1.png</file>
+    <file>assets/pfps/default2.png</file>
+    <file>assets/pfps/default3.png</file>
+    <file>assets/pfps/default4.png</file>
+  </gresource>
+</gresources>

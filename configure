@@ -1,7 +1,4 @@
 #!/bin/sh
-
-# configure
-
 usage()
 {
     echo "Usage: ./configure [linux|win32]"
@@ -39,7 +36,6 @@ cat > config.mk <<EOF
 
 UNAME_S := $(uname -s)
 PLATFORM := $PLATFORM
-
 CPPFLAGS :=
 CFLAGS :=
 LDFLAGS :=
@@ -59,6 +55,7 @@ case "$PLATFORM" in
             gtk4 \
             librsvg-2.0 \
             libcurl \
+            openssl \
             libcjson)"
 
         LIBS="$(pkg-config --libs \
@@ -66,6 +63,7 @@ case "$PLATFORM" in
             gtk4 \
             librsvg-2.0 \
             libcurl \
+            openssl \
             libcjson)"
 
         cat >> config.mk <<EOF
@@ -78,26 +76,105 @@ EOF
 
     win32)
 
+        if [ -z "${MINGW_SYSROOT:-}" ]; then
+            MINGW_SYSROOT="/usr/x86_64-w64-mingw32"
+        fi
+
+        if [ ! -d "$MINGW_SYSROOT/include" ]; then
+            echo "configure: error: MinGW sysroot not found: $MINGW_SYSROOT" >&2
+            exit 1
+        fi
+
         cat >> config.mk <<EOF
+MINGW_SYSROOT := $MINGW_SYSROOT
 CC := gcc
+
 CPPFLAGS += -D_WIN32
 
-LIBS += -lrsvg-2
-LIBS += -lcurl
+# In order to force Adwaita Dark on Windows
+CPPFLAGS += -D FORCE_ADWAITA_DARK
+
+# GTK4
+CPPFLAGS += -I$MINGW_SYSROOT/include/gtk-4.0
+
+# GLib / GObject / GIO
+CPPFLAGS += -I$MINGW_SYSROOT/include/glib-2.0
+CPPFLAGS += -I$MINGW_SYSROOT/lib/glib-2.0/include
+
+# Pango
+CPPFLAGS += -I$MINGW_SYSROOT/include/pango-1.0
+
+# HarfBuzz
+CPPFLAGS += -I$MINGW_SYSROOT/include/harfbuzz
+
+# GDK Pixbuf
+CPPFLAGS += -I$MINGW_SYSROOT/include/gdk-pixbuf-2.0
+
+# Cairo
+CPPFLAGS += -I$MINGW_SYSROOT/include/cairo
+
+# Graphene
+CPPFLAGS += -I$MINGW_SYSROOT/include/graphene-1.0
+CPPFLAGS += -I$MINGW_SYSROOT/lib/graphene-1.0/include
+
+# librsvg
+CPPFLAGS += -I$MINGW_SYSROOT/include/librsvg-2.0
+
+# libcurl
+CPPFLAGS += -I$MINGW_SYSROOT/include
+CPPFLAGS += -DCURL_STATICLIB
+
+# cJSON
+CPPFLAGS += -I$MINGW_SYSROOT/include
+
+LIBS += -L$MINGW_SYSROOT/lib
+
+LIBS += -Wl,-Bstatic
 LIBS += -lcjson
+LIBS += -Wl,-Bdynamic
+
+LIBS += -Wl,-Bstatic
+LIBS += -lcurl
+LIBS += -lssh2
+LIBS += -lidn2
+LIBS += -lpsl
+LIBS += -lunistring
+LIBS += -liconv
+LIBS += -lssl
+LIBS += -lcrypto
+LIBS += -lz
+LIBS += -lbrotlidec
+LIBS += -lbrotlicommon
+LIBS += -lzstd
+LIBS += -lnghttp2
+LIBS += -lngtcp2_crypto_ossl
+LIBS += -lngtcp2
+LIBS += -lnghttp3
+LIBS += -Wl,-Bdynamic
+
+LIBS += -lwldap32
+LIBS += -lbcrypt
+LIBS += -ladvapi32
+LIBS += -lcrypt32
+LIBS += -lsecur32
+LIBS += -lws2_32
+LIBS += -liphlpapi
+
 LIBS += -lgtk-4
+LIBS += -lvulkan-1
+LIBS += -lgraphene-1.0
+LIBS += -lglib-2.0
+LIBS += -lgio-2.0
+LIBS += -lgobject-2.0
+LIBS += -lgdk_pixbuf-2.0
 LIBS += -lpangocairo-1.0
 LIBS += -lpango-1.0
 LIBS += -lharfbuzz
-LIBS += -lgdk_pixbuf-2.0
 LIBS += -lcairo-gobject
 LIBS += -lcairo
-LIBS += -lvulkan
-LIBS += -lgraphene-1.0
-LIBS += -lgio-2.0
-LIBS += -lgobject-2.0
-LIBS += -lglib-2.0
+LIBS += -lrsvg-2
 EOF
+
         ;;
 esac
 

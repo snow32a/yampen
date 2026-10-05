@@ -1,0 +1,16 @@
+.avatar {
+    border-radius: 50%;
+}
+
+.channel-category{
+    padding-top: 5px;
+}
+
+.channel-row{
+    border-radius:8px;
+}
+
+.channel-row:selected{
+    background-color: #f25858ff;
+    color:#404040;
+}

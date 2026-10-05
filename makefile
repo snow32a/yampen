@@ -4,10 +4,59 @@ SRC = *.c protocol/*.c hmap/*.c
 CC = gcc
 
 CFLAGS += -Wall
-LIBS += -lrsvg-2 -lssl -lcurl -lcjson -lgtk-4 -lpangocairo-1.0 -lpango-1.0 \
-        -lharfbuzz -lgdk_pixbuf-2.0 -lcairo-gobject -lcairo \
-        -lvulkan -lgraphene-1.0 -lgio-2.0 -lgobject-2.0 -lglib-2.0 \
-        -pthread
 
-yampen: $(SRC)
-	$(CROSS_COMPILE)$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS) $(LIBS)
+BUILD_DIR := build
+ifeq ($(PLATFORM),win32)
+
+build/yampen.exe: $(SRC)
+	@mkdir -p $(BUILD_DIR)
+	$(CROSS_COMPILE)$(CC) $(CPPFLAGS) $(CFLAGS) \
+		-o $(BUILD_DIR)/yampen.exe \
+		$(SRC) $(LDFLAGS) $(LIBS)
+	glib-compile-resources assets.gresource.xml \
+		--sourcedir=. \
+		--target=assets.c \
+		--generate-source
+	@queue=$$(mktemp); \
+	seen=$$(mktemp); \
+	trap 'rm -f "$$queue" "$$seen"' EXIT; \
+	echo "$(BUILD_DIR)/yampen.exe" > "$$queue"; \
+	while [ -s "$$queue" ]; do \
+		file=$$(head -n 1 "$$queue"); \
+		sed -i '1d' "$$queue"; \
+		name=$$(basename "$$file"); \
+		if grep -Fxq "$$name" "$$seen"; then \
+			continue; \
+		fi; \
+		echo "$$name" >> "$$seen"; \
+		echo "Scanning: $$name"; \
+		deps=$$(objdump -p "$$file" 2>/dev/null | \
+			sed -n 's/^[[:space:]]*DLL Name: //p'); \
+		for dep in $$deps; do \
+			case "$$dep" in \
+				kernel32.dll|kernelbase.dll|ntdll.dll| \
+				user32.dll|gdi32.dll|advapi32.dll|shell32.dll| \
+				ole32.dll|oleaut32.dll|ws2_32.dll| \
+				secur32.dll|crypt32.dll|bcrypt.dll) \
+					continue ;; \
+			esac; \
+			src="$(MINGW_SYSROOT)/bin/$$dep"; \
+			dst="$(BUILD_DIR)/$$dep"; \
+			if [ -f "$$src" ] && [ ! -f "$$dst" ]; then \
+				echo "  + $$dep"; \
+				cp "$$src" "$$dst"; \
+				echo "$$dst" >> "$$queue"; \
+			fi; \
+		done; \
+	done
+else
+build/yampen: $(SRC)
+	@mkdir -p $(BUILD_DIR)
+	glib-compile-resources assets.gresource.xml \
+		--sourcedir=. \
+		--target=assets.c \
+		--generate-source
+	$(CC) -g -O0 -fsanitize=address $(CPPFLAGS) $(CFLAGS) \
+		-o $(BUILD_DIR)/yampen \
+		$(SRC) $(LDFLAGS) $(LIBS)
+endif
