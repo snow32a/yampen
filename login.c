@@ -87,8 +87,7 @@ int NwLogin(char* uns, char* password) {
 static char* pendingRegisterUsername;
 static char* pendingRegisterPassword;
 gboolean ErrorOnRegisterFail(void* data) {
-	GtkAlertDialog* dialog =
-		gtk_alert_dialog_new("Failed to register!");
+	GtkAlertDialog* dialog = gtk_alert_dialog_new("Failed to register!");
 	return G_SOURCE_REMOVE;
 }
 void onYAMPRegisterResult(int success) {
@@ -229,13 +228,15 @@ gboolean DoLoggedIn(gpointer data) {
 	logincbpayload* params = data;
 	g_application_release(G_APPLICATION(g_application_get_default()));
 	YAMPListBuddies(mainsock);
-	StartMainIMWindow(params->usr, params->spaces, params->nspaces, params->incfq,
-					  params->fqcount, params->outfq, params->outfqcount);
+	StartMainIMWindow(params->usr, params->spaces, params->nspaces,
+					  params->incfq, params->fqcount, params->outfq,
+					  params->outfqcount);
 	CloseLoginDialog(NULL);
 	return G_SOURCE_REMOVE;
 }
-void onYAMPLoggedIn(YampUser usr, YampSpace* spaces, int nspaces, YampUser* incfq, int fqcount,
-					YampUser* outfq, int outfqcount) {
+void onYAMPLoggedIn(YampUser usr, YampSpace* spaces, int nspaces,
+					YampUser* incfq, int fqcount, YampUser* outfq,
+					int outfqcount) {
 	logincbpayload* params = malloc(sizeof(logincbpayload));
 	params->usr = usr;
 	params->spaces = spaces;
@@ -302,6 +303,17 @@ int GetSavedLoginData(SavedCred* out) {
 #endif
 void DisplayLoginDialog(GtkApplication* app) {
 	g_application_hold(G_APPLICATION(app));
+#if HAVE_LIBSECRET
+	if (SecretServiceAvail) {
+		SavedCred cred;
+		if (GetSavedLoginData(&cred)) {
+			NwLogin(cred.uns, cred.pwd);
+			free(cred.uns);
+			secret_password_free(cred.pwd);
+			return;
+		}
+	}
+#endif
 	login_app = app;
 	BuildLoginWindow(app);
 }

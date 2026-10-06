@@ -67,3 +67,4 @@ int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
 int YAMPSendFriendReq(SSL* fd, char* to);
 int YAMPAcceptFriendReq(SSL* fd, char* user);
 int YAMPDenyFriendReq(SSL* fd, char* user);
+int YAMPUpdateUserProfile(SSL* fd, YampUser usr);

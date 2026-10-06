@@ -3,7 +3,7 @@ include config.mk
 SRC = *.c protocol/*.c hmap/*.c
 CC = gcc
 
-CFLAGS += -Wall
+CFLAGS += -Wall -g -O0
 
 BUILD_DIR := build
 ifeq ($(PLATFORM),win32)
@@ -49,6 +49,7 @@ build/yampen.exe: $(SRC)
 			fi; \
 		done; \
 	done
+	makensis setup.nsi
 else
 build/yampen: $(SRC)
 	@mkdir -p $(BUILD_DIR)
@@ -56,7 +57,7 @@ build/yampen: $(SRC)
 		--sourcedir=. \
 		--target=assets.c \
 		--generate-source
-	$(CC) -g -O0 -fsanitize=address $(CPPFLAGS) $(CFLAGS) \
+	$(CC) $(CPPFLAGS) -fsanitize=address $(CFLAGS) \
 		-o $(BUILD_DIR)/yampen \
 		$(SRC) $(LDFLAGS) $(LIBS)
 endif

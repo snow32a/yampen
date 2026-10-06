@@ -183,6 +183,45 @@ YampUser ParseUserObject(cJSON* rawusr) {
 	usr.status.RPCIcon = cJSON_GetObjectItem(rawstatus, "RPCIcon")->valuestring;
 	return usr;
 }
+cJSON* CreateUserObject(YampUser user) {
+    cJSON* returnObj = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(returnObj, "id", user.id);
+    cJSON_AddStringToObject(returnObj, "name", user.username);
+
+    if (user.displayname)
+        cJSON_AddStringToObject(returnObj, "display_name", user.displayname);
+
+    if (user.description)
+        cJSON_AddStringToObject(returnObj, "description", user.description);
+
+    if (user.pfp)
+        cJSON_AddStringToObject(returnObj, "pfp", user.pfp);
+
+    if (user.status.RPCName ||
+        user.status.RPCDesc ||
+        user.status.RPCIcon ||
+        user.status.status) {
+
+        cJSON* statusObj = cJSON_CreateObject();
+
+        if (user.status.RPCName)
+            cJSON_AddStringToObject(statusObj, "RPCName", user.status.RPCName);
+
+        if (user.status.RPCDesc)
+            cJSON_AddStringToObject(statusObj, "RPCDesc", user.status.RPCDesc);
+
+        if (user.status.RPCIcon)
+            cJSON_AddStringToObject(statusObj, "RPCIcon", user.status.RPCIcon);
+
+        if (user.status.status)
+            cJSON_AddStringToObject(statusObj, "status", user.status.status);
+
+        cJSON_AddItemToObject(returnObj, "status", statusObj);
+    }
+
+    return returnObj;
+}
 void* YAMPRecvLoop(void* fd) {
 	uint32_t len;
 	char* payload;
@@ -562,5 +601,19 @@ int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
 	cJSON_free(finalPayload);
 	cJSON_Delete(payload);
 	g_free(reqid);
+	return 1;
+}
+
+int YAMPUpdateUserProfile(SSL* fd, YampUser usr) {
+	cJSON* payload = cJSON_CreateObject();
+	cJSON_AddStringToObject(payload, "reqid", "UpdateUserProfile");
+	cJSON* profile = CreateUserObject(usr);
+	cJSON_AddItemToObject(payload, "profile", profile);
+	cJSON_AddStringToObject(payload, "type", "request");
+	cJSON_AddStringToObject(payload, "endpoint", "UpdateUserProfile");
+	char* finalPayload = cJSON_Print(payload);
+	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
+	cJSON_free(finalPayload);
+	cJSON_Delete(payload);
 	return 1;
 }

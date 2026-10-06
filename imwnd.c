@@ -18,7 +18,9 @@
 #include "monocypher.h"
 #include "insertspace.h"
 #include "notification.h"
+#include "usersettings.h"
 
+char* curUserID;
 GtkWidget* main_window;
 GtkWidget* ChannelSidebar;
 GtkWidget* dmsbutton;
@@ -35,6 +37,7 @@ GtkWidget* notifoverlay;
 GtkWidget* dmlist;
 GtkWidget* ListVBOX;
 GtkWidget* ListTitle;
+GtkWidget* suvbox;
 gboolean listmode = TRUE;
 char* curSpace = NULL;
 char* curSpaceDisplay = NULL;
@@ -43,6 +46,7 @@ char* currentChat;
 char* pfp_dir;
 static gboolean onUIDisconnected(gpointer none) {
 	GtkAlertDialog* alert = gtk_alert_dialog_new("Server disconnected!");
+	gtk_alert_dialog_show(alert, NULL);
 	DisplayLoginDialog(global_app);
 	return G_SOURCE_REMOVE;
 }
@@ -94,6 +98,60 @@ static gboolean EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 }
 
 void onYAMPDisconnected() { g_idle_add(onUIDisconnected, 0); }
+void BuildUserProfile(YampUser usr) {
+	GtkWidget* overlay = gtk_overlay_new();
+
+	GtkWidget* base = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+	GtkWidget* banner = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_add_css_class(banner, "banner");
+	gtk_widget_set_size_request(banner, -1, 100);
+	gtk_widget_set_hexpand(banner, TRUE);
+	gtk_box_append(GTK_BOX(base), banner);
+
+	GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_set_size_request(spacer, -1, 40);
+	gtk_box_append(GTK_BOX(base), spacer);
+
+	gtk_overlay_set_child(GTK_OVERLAY(overlay), base);
+
+	GtkWidget* pfp;
+	if (usr.pfp && strlen(usr.pfp)) {
+
+	} else {
+		char pfppath[38];
+		sprintf(pfppath, "/org/yampen/assets/pfps/default%d.png",
+				GetDefaultPfp(usr.id));
+		pfp = gtk_image_new_from_resource(pfppath);
+	}
+	gtk_image_set_pixel_size(GTK_IMAGE(pfp), 80);
+	gtk_widget_add_css_class(pfp, "avatar");
+	gtk_widget_set_overflow(pfp, GTK_OVERFLOW_HIDDEN);
+	gtk_widget_set_halign(pfp, GTK_ALIGN_START);
+	gtk_widget_set_valign(pfp, GTK_ALIGN_END);
+	gtk_widget_set_margin_start(pfp, 16);
+	gtk_overlay_add_overlay(GTK_OVERLAY(overlay), pfp);
+
+	GtkWidget* infoarea = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+	gtk_widget_set_hexpand(infoarea, 1);
+	gtk_widget_set_margin_start(infoarea, 16);
+	gtk_widget_set_margin_end(infoarea, 16);
+	gtk_widget_set_halign(infoarea, GTK_ALIGN_START);
+	if (usr.displayname) {
+		GtkWidget* dpyname = gtk_label_new(usr.displayname);
+		gtk_widget_add_css_class(dpyname, "h2");
+		gtk_box_append(GTK_BOX(infoarea), dpyname);
+		GtkWidget* usrname = gtk_label_new(usr.username);
+		gtk_label_set_xalign(GTK_LABEL(usrname), 0.0f);
+		gtk_box_append(GTK_BOX(infoarea), usrname);
+	} else {
+		GtkWidget* usrname = gtk_label_new(usr.username);
+		gtk_widget_add_css_class(usrname, "h2");
+		gtk_box_append(GTK_BOX(infoarea), usrname);
+	}
+	gtk_box_append(GTK_BOX(suvbox), overlay);
+	gtk_box_append(GTK_BOX(suvbox), infoarea);
+}
 void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "chat");
 	if (!row) {
@@ -102,11 +160,15 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	if (currentChat) {
 		free(currentChat);
 	}
+	GtkWidget* wdg;
+	while ((wdg = gtk_widget_get_first_child(suvbox)) != NULL)
+		gtk_widget_unparent(wdg);
 	GtkWidget* child = gtk_widget_get_next_sibling(
 		gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
+	BuildUserProfile(*GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
 	char* name = gtk_label_get_text(GTK_LABEL(child));
-	char* username = g_object_get_data(G_OBJECT(child), "username");
-	currentChat = MakeDMChannel(username, curUsername);
+	char* recpid = g_object_get_data(G_OBJECT(child), "id");
+	currentChat = MakeDMChannel(recpid, curUserID);
 	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
 	YAMPGetMessageHistory(mainsock, currentChat);
 }
@@ -762,6 +824,7 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	gtk_widget_set_hexpand(panelhbox, TRUE);
 	gtk_widget_set_vexpand(panelhbox, TRUE);
 	GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+	gtk_widget_set_hexpand(vbox, FALSE);
 	GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 
 
@@ -771,7 +834,9 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	GtkWidget* friendspane = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 	SetupFriendsPane(friendspane);
 	GtkWidget* chatvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-	GtkWidget* suvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+	suvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+	gtk_widget_set_hexpand(suvbox, 0);
+	BuildUserProfile(usr);
 	gtk_widget_set_size_request(suvbox, 300, -1);
 	// su stands for space & user here, had no better term, the box is for both
 	// guild member listing and user profiles
@@ -939,7 +1004,6 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 
 
 
-	GtkWidget* UserDetailsBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 	YampUser* heapusr = malloc(sizeof(YampUser));
 	*heapusr = usr;
 	heapusr->username = strdup(heapusr->username);
@@ -958,6 +1022,7 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	if (!displayName) {
 		displayName = usr.username;
 	}
+	curUserID = heapusr->id;
 
 	if (usr.pfp && strlen(usr.pfp)) {
 		curl_easy_setopt(curl, CURLOPT_URL, usr.pfp);
@@ -983,10 +1048,15 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	// the user logs in as online by default so this is fixed
 	// change when that statement changes
 
+	GtkWidget* UserDetailsArea = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_set_size_request(UserDetailsArea, 0, 50);
+	GtkWidget* UserDetailsBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+	gtk_widget_set_hexpand(UserDetailsBox, 1);
 	gtk_style_context_add_provider(gtk_widget_get_style_context(SelfPfp),
 								   GTK_STYLE_PROVIDER(provider),
 								   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	gtk_box_append(GTK_BOX(UserDetailsBox), SelfPfp);
+	gtk_widget_set_valign(SelfPfp, GTK_ALIGN_CENTER);
 	GtkWidget* UsernameBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	gtk_widget_set_valign(UsernameBox, GTK_ALIGN_CENTER);
 	DisplayNameLabel = gtk_label_new(displayName);
@@ -997,7 +1067,17 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 		gtk_widget_set_opacity(UsernameLabel, 0.6f);
 		gtk_box_append(GTK_BOX(UsernameBox), UsernameLabel);
 	}
-	gtk_box_append(GTK_BOX(vbox), UserDetailsBox);
+	GtkWidget* usersettingsbtn = gtk_button_new();
+	gtk_widget_add_css_class(usersettingsbtn, "flat");
+	gtk_widget_add_css_class(usersettingsbtn, "circular");
+	gtk_widget_set_valign(usersettingsbtn, GTK_ALIGN_CENTER);
+	gtk_button_set_icon_name(GTK_BUTTON(usersettingsbtn), "emblem-system");
+	g_signal_connect(usersettingsbtn, "clicked", G_CALLBACK(LaunchUserSettings),
+					 NULL);
+
+	gtk_box_append(GTK_BOX(UserDetailsArea), UserDetailsBox);
+	gtk_box_append(GTK_BOX(UserDetailsArea), usersettingsbtn);
+	gtk_box_append(GTK_BOX(vbox), UserDetailsArea);
 	GtkGesture* click = gtk_gesture_click_new();
 	g_signal_connect(click, "pressed", G_CALLBACK(UserDetailsBoxOnClick), NULL);
 	gtk_widget_add_controller(UserDetailsBox, GTK_EVENT_CONTROLLER(click));
@@ -1065,6 +1145,7 @@ int InsertFriendIntoList(YampUser usr) {
 								   GTK_STYLE_PROVIDER(provider),
 								   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	g_object_set_data(G_OBJECT(LBRowLabel), "username", heapusr->username);
+	g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
 	gtk_box_append(GTK_BOX(ItemBox), Pfp);
 	gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
 	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
@@ -1097,7 +1178,7 @@ static gboolean MainThreadFriendCB(gpointer data) {
 	}
 	free(payload->users);
 	free(payload);
-    return G_SOURCE_REMOVE;
+	return G_SOURCE_REMOVE;
 }
 gboolean MainThreadNewFriend(void* rawfriend) {
 	YampUser* friend = rawfriend;
