@@ -74,6 +74,7 @@ int YAMPSendIM(SSL* fd, char* where, char* content);
 int YAMPListSpaceChannels(SSL* fd, char* space);
 char* MakeDMChannel(const char* a, const char* b);
 char* MakeGCChannel(const char* a);
+const char* ParseGCChannel(const char* a);
 gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out);
 int YAMPGetMessageHistory(SSL* fd, char* where);
 int YAMPInsertSpace(SSL* fd, char* name, char* display_name, int type,

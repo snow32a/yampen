@@ -153,6 +153,9 @@ char* MakeGCChannel(const char* a) {
 	ret[0] = '&';
 	return ret;
 }
+const char* ParseGCChannel(const char* a) {
+	return a+1;
+}
 
 //////////////////////////////////////////
 ///    YAMP'S WHERE PARAMETER STYLE    ///
@@ -259,7 +262,7 @@ YampUser ParseUserObject(cJSON* rawusr) {
 	return usr;
 }
 YampChannel RecursiveParseChannel(cJSON* raw) {
-	YampChannel ret;
+	YampChannel ret={0};
 	cJSON* pos = cJSON_GetObjectItem(raw, "position");
 	if(pos){
 		ret.pos = pos->valueint;
@@ -287,7 +290,7 @@ YampChannel RecursiveParseChannel(cJSON* raw) {
 	ret.type = cJSON_GetObjectItem(raw, "type")->valueint;
 	const cJSON* jpeople = cJSON_GetObjectItem(raw, "members");
 	const char* addr = cJSON_GetStringValue(cJSON_GetObjectItem(raw, "id"));
-
+	ret.npeople = cJSON_GetArraySize(jpeople);
 	ret.people = malloc(sizeof(YampUser)*cJSON_GetArraySize(jpeople));
 	int i = 0;
 	const cJSON* item;
