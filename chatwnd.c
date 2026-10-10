@@ -1,4 +1,5 @@
 #include "gdk-pixbuf/gdk-pixbuf.h"
+#include "glib-object.h"
 #include "globals.h"
 #include "gtk/gtk.h"
 #include "hashtables.h"
@@ -12,108 +13,146 @@ typedef struct {
 	GtkWidget* EntryArea;
 	GtkWidget* ChatView;
 } send_im_obj;
-#define STYLE_NONE 0
-#define STYLE_BOLD (1 << 0)
-#define STYLE_ITALIC (1 << 1)
-#define STYLE_UNDERLINE (1 << 2)
-#define STYLE_LINK (1 << 3)
 char* linkTo;
-unsigned int GetDefaultPfp(const char *id)
-{
-    unsigned rem = 0;
+unsigned int GetDefaultPfp(const char* id) {
+	unsigned rem = 0;
 
-    for (int i = 0; i < 16; i++) {
-        unsigned v;
+	for (int i = 0; i < 16; i++) {
+		unsigned v;
 
-        if (id[i] >= '0' && id[i] <= '9')
-            v = id[i] - '0';
-        else if (id[i] >= 'a' && id[i] <= 'z')
-            v = id[i] - 'a' + 10;
-        else
-            return 0; // invalid ID
+		if (id[i] >= '0' && id[i] <= '9')
+			v = id[i] - '0';
+		else if (id[i] >= 'a' && id[i] <= 'z')
+			v = id[i] - 'a' + 10;
+		else
+			return 0; // invalid ID
 
-        rem = (rem * 36 + v) % 5;
-    }
+		rem = (rem * 36 + v) % 5;
+	}
 
-    return rem;
+	return rem;
 }
 
-static void BuildMarkdownMarkup(MarkdownElement* node, GString* out,
-								unsigned int style) {
+#define QUOTE_BAR "<span alpha=\"60%\">\xe2\x96\x8e </span>"
+#define CODE_STYLE "background=\"#2b2b2b\" foreground=\"#e0e0e0\""
+#define SPOILER_STYLE "background=\"#4a4a4a\" foreground=\"#4a4a4a\""
+
+static void BuildMarkdownMarkup(MarkdownElement* node, GString* out);
+
+static void AppendEscaped(GString* out, const char* s) {
+	if (!s)
+		return;
+	char* valid = g_utf8_make_valid(s, -1);
+	char* esc = g_markup_escape_text(valid, -1);
+	g_string_append(out, esc);
+	g_free(esc);
+	g_free(valid);
+}
+
+/* the parser eats the line break after these, so we put it back */
+static gboolean IsLineBlock(int type) {
+	return type == MARKDOWN_H1 || type == MARKDOWN_H1 + 1 ||
+		   type == MARKDOWN_H1 + 2 || type == MARKDOWN_SUBTEXT ||
+		   type == MARKDOWN_QUOTE;
+}
+
+static void BuildChildren(MarkdownElement* node, GString* out) {
+	for (int i = 0; i < node->nChildren; i++) {
+		BuildMarkdownMarkup(node->children[i], out);
+		if (i + 1 < node->nChildren && IsLineBlock(node->children[i]->type))
+			g_string_append_c(out, '\n');
+	}
+}
+
+static void Wrap(MarkdownElement* node, GString* out, const char* open,
+				 const char* close) {
+	g_string_append(out, open);
+	BuildChildren(node, out);
+	g_string_append(out, close);
+}
+
+static void BuildMarkdownMarkup(MarkdownElement* node, GString* out) {
 	if (!node)
 		return;
 
-	unsigned int childStyle = style;
-
 	switch (node->type) {
 	case MARKDOWN_BOLD:
-		childStyle |= STYLE_BOLD;
+		Wrap(node, out, "<b>", "</b>");
 		break;
-
 	case MARKDOWN_ITALIC:
-		childStyle |= STYLE_ITALIC;
+		Wrap(node, out, "<i>", "</i>");
 		break;
-
 	case MARKDOWN_UNDERLINE:
-		childStyle |= STYLE_UNDERLINE;
+		Wrap(node, out, "<u>", "</u>");
+		break;
+	case MARKDOWN_STRIKE:
+		Wrap(node, out, "<s>", "</s>");
+		break;
+	case MARKDOWN_SPOILER:
+		Wrap(node, out, "<span " SPOILER_STYLE ">", "</span>");
 		break;
 
 	case MARKDOWN_LINK: {
 		char* url = g_markup_escape_text(node->content, -1);
-
-		g_string_append(out, "<a href=\"");
-		g_string_append(out, url);
-		g_string_append(out, "\">");
-
-		for (unsigned int i = 0; i < node->nChildren; i++)
-			BuildMarkdownMarkup(node->children[i], out, childStyle);
-
-		g_string_append(out, "</a>");
-
+		g_string_append_printf(out, "<a href=\"%s\">", url);
 		g_free(url);
-		return;
-	}
-
-	default:
+		BuildChildren(node, out);
+		g_string_append(out, "</a>");
 		break;
 	}
 
-	gboolean openedBold = FALSE;
-	gboolean openedItalic = FALSE;
-	gboolean openedUnderline = FALSE;
+	case MARKDOWN_CODE:
+		g_string_append(out, "<tt><span " CODE_STYLE ">");
+		AppendEscaped(out, node->content);
+		g_string_append(out, "</span></tt>");
+		break;
 
-	if ((childStyle & STYLE_BOLD) && !(style & STYLE_BOLD)) {
-		g_string_append(out, "<b>");
-		openedBold = TRUE;
+	case MARKDOWN_CODEBLOCK:
+		if (out->len && out->str[out->len - 1] != '\n')
+			g_string_append_c(out, '\n');
+		g_string_append(out, "<tt><span " CODE_STYLE ">");
+		AppendEscaped(out, node->content);
+		g_string_append(out, "</span></tt>");
+		break;
+
+	case MARKDOWN_EMOJI:
+		g_string_append(out, "<span size=\"x-large\">");
+		AppendEscaped(out, node->content);
+		g_string_append(out, "</span>");
+		break;
+
+	case MARKDOWN_H1:
+		Wrap(node, out, "<span size=\"xx-large\" weight=\"bold\">", "</span>");
+		break;
+	case MARKDOWN_H1 + 1: /* H2 */
+		Wrap(node, out, "<span size=\"x-large\" weight=\"bold\">", "</span>");
+		break;
+	case MARKDOWN_H1 + 2: /* H3 */
+		Wrap(node, out, "<span size=\"large\" weight=\"bold\">", "</span>");
+		break;
+	case MARKDOWN_SUBTEXT:
+		Wrap(node, out, "<span size=\"small\" alpha=\"60%\">", "</span>");
+		break;
+
+	case MARKDOWN_QUOTE: {
+		GString* inner = g_string_new(NULL);
+		BuildChildren(node, inner);
+		g_string_append(out, QUOTE_BAR);
+		for (const char* p = inner->str; *p; p++) {
+			g_string_append_c(out, *p);
+			if (*p == '\n') /* bar on every quoted line */
+				g_string_append(out, QUOTE_BAR);
+		}
+		g_string_free(inner, TRUE);
+		break;
 	}
 
-	if ((childStyle & STYLE_ITALIC) && !(style & STYLE_ITALIC)) {
-		g_string_append(out, "<i>");
-		openedItalic = TRUE;
+	case MARKDOWN_TEXT:
+	default:
+		AppendEscaped(out, node->content);
+		BuildChildren(node, out);
+		break;
 	}
-
-	if ((childStyle & STYLE_UNDERLINE) && !(style & STYLE_UNDERLINE)) {
-		g_string_append(out, "<u>");
-		openedUnderline = TRUE;
-	}
-
-	if (node->content) {
-		char* escaped = g_markup_escape_text(node->content, -1);
-		g_string_append(out, escaped);
-		g_free(escaped);
-	}
-
-	for (unsigned int i = 0; i < node->nChildren; i++)
-		BuildMarkdownMarkup(node->children[i], out, childStyle);
-
-	if (openedUnderline)
-		g_string_append(out, "</u>");
-
-	if (openedItalic)
-		g_string_append(out, "</i>");
-
-	if (openedBold)
-		g_string_append(out, "</b>");
 }
 
 static void AppendImageFragment(GtkFlowBox* flow, MarkdownElement* node) {
@@ -178,7 +217,7 @@ GtkWidget* BuildMarkdownMessageWidget(const char* content) {
 	MarkdownElement* tree = ParseMarkdownStr(content);
 
 	GString* markup = g_string_new(NULL);
-	BuildMarkdownMarkup(tree, markup, STYLE_NONE);
+	BuildMarkdownMarkup(tree, markup);
 
 	GtkWidget* label = gtk_label_new(NULL);
 	gtk_label_set_markup(GTK_LABEL(label), markup->str);
@@ -205,54 +244,106 @@ void ChatAreaSizeChanged(GtkWidget* widget, GParamSpec* pspec, gpointer data) {
 	gtk_adjustment_set_value(adj, MAX(0.0, bottom));
 }
 void PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea, char* userid,
-				   char* displayname, char* pfppath, char* content) {
-	GtkWidget* msgrow = gtk_list_box_row_new();
-	gtk_widget_set_hexpand(msgrow, TRUE);
-	GtkWidget* msgbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-	gtk_widget_set_hexpand(msgbox, TRUE);
-	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(msgrow), msgbox);
+                   char* displayname, char* pfppath, char* content) {
+    GtkWidget* lastmsgrow = gtk_widget_get_last_child(chatarea);
+    GtkWidget* msgrow = NULL;
+    GtkWidget* msgvbox = NULL;
 
-	gtk_widget_set_halign(msgbox, GTK_ALIGN_START);
-	gtk_widget_set_valign(msgbox, GTK_ALIGN_START);
-	GtkWidget* msghbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-	gtk_widget_set_halign(msgbox, GTK_ALIGN_START);
-	gtk_widget_set_hexpand(msgbox, TRUE);
-	GtkWidget* msgvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-	GtkWidget* usrtext = gtk_label_new(displayname);
-	gtk_label_set_markup(GTK_LABEL(usrtext),
-						 g_strdup_printf("<b>%s</b>", displayname));
-	gtk_widget_set_halign(usrtext, GTK_ALIGN_START);
-	gtk_box_append(GTK_BOX(msgvbox), usrtext);
-	GtkWidget* msgtext = BuildMarkdownMessageWidget(content);
-	GtkCssProvider* msgbubprovider = gtk_css_provider_new();
-	gtk_css_provider_load_from_string(
-		msgbubprovider, "label { padding: 10px; border-radius: 10px; "
-						"background-color: rgba(0, 0, 0, 0.2); }");
+    const char* last_userid = NULL;
 
-	GtkStyleContext* msgbubcontext = gtk_widget_get_style_context(msgtext);
-	gtk_style_context_add_provider(msgbubcontext,
-								   GTK_STYLE_PROVIDER(msgbubprovider),
-								   GTK_STYLE_PROVIDER_PRIORITY_USER);
-	gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
-	gtk_box_append(GTK_BOX(msgvbox), msgtext);
-	GtkWidget* userpfp = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);
-	GtkWidget* userpfpinner;
-	if(!pfppath){
-		char pfppath[37];
-		sprintf(pfppath,"/org/yampen/assets/pfps/default%i.png",GetDefaultPfp(userid));
-		userpfpinner = gtk_image_new_from_resource(pfppath);
-	} else{
-		userpfpinner = gtk_image_new_from_file(pfppath);
-	}
-	gtk_widget_add_css_class(userpfp, "avatar");
-	gtk_widget_set_overflow(userpfp, GTK_OVERFLOW_HIDDEN);
-	gtk_widget_set_valign(userpfp, GTK_ALIGN_START);
-	gtk_image_set_pixel_size(GTK_IMAGE(userpfpinner), 42);
-	gtk_box_append(GTK_BOX(userpfp), userpfpinner);
-	gtk_box_append(GTK_BOX(msghbox), userpfp);
-	gtk_box_append(GTK_BOX(msghbox), msgvbox);
-	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(msgrow), msghbox);
-	gtk_list_box_append(GTK_LIST_BOX(chatarea), msgrow);
+    if (lastmsgrow)
+        last_userid = g_object_get_data(G_OBJECT(lastmsgrow), "userid");
+
+    if (last_userid && strcmp(userid, last_userid) == 0) {
+        msgrow = lastmsgrow;
+
+        GtkWidget* msgbox =
+            gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(msgrow));
+
+        msgvbox = gtk_widget_get_last_child(msgbox);
+    } else {
+        msgrow = gtk_list_box_row_new();
+        gtk_widget_set_hexpand(msgrow, TRUE);
+
+        g_object_set_data_full(G_OBJECT(msgrow), "userid",
+                               g_strdup(userid), free);
+
+        GtkWidget* msgbox =
+            gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+        gtk_widget_set_hexpand(msgbox, TRUE);
+        gtk_widget_set_halign(msgbox, GTK_ALIGN_START);
+        gtk_widget_set_valign(msgbox, GTK_ALIGN_START);
+
+        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(msgrow), msgbox);
+
+        GtkWidget* userpfp = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_widget_add_css_class(userpfp, "avatar");
+        gtk_widget_set_overflow(userpfp, GTK_OVERFLOW_HIDDEN);
+        gtk_widget_set_valign(userpfp, GTK_ALIGN_START);
+
+        GtkWidget* userpfpinner;
+
+        if (!pfppath) {
+            char defaultpfppath[64];
+
+            snprintf(defaultpfppath, sizeof(defaultpfppath),
+                     "/org/yampen/assets/pfps/default%i.png",
+                     GetDefaultPfp(userid));
+
+            userpfpinner =
+                gtk_image_new_from_resource(defaultpfppath);
+        } else {
+            userpfpinner = gtk_image_new_from_file(pfppath);
+        }
+
+        gtk_image_set_pixel_size(GTK_IMAGE(userpfpinner), 42);
+        gtk_box_append(GTK_BOX(userpfp), userpfpinner);
+        gtk_box_append(GTK_BOX(msgbox), userpfp);
+
+        msgvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_widget_set_halign(msgvbox, GTK_ALIGN_START);
+        gtk_widget_set_hexpand(msgvbox, TRUE);
+
+        GtkWidget* usrtext = gtk_label_new(NULL);
+
+        char* markup = g_markup_printf_escaped("<b>%s</b>", displayname);
+        gtk_label_set_markup(GTK_LABEL(usrtext), markup);
+        g_free(markup);
+
+        gtk_widget_set_halign(usrtext, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(msgvbox), usrtext);
+
+        gtk_box_append(GTK_BOX(msgbox), msgvbox);
+
+        gtk_list_box_append(GTK_LIST_BOX(chatarea), msgrow);
+    }
+
+    /* Actual message */
+    GtkWidget* msgtext = BuildMarkdownMessageWidget(content);
+
+    GtkCssProvider* msgbubprovider = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(
+        msgbubprovider,
+        "label { padding: 10px; border-radius: 10px; "
+        "background-color: rgba(0, 0, 0, 0.2); }");
+
+    gtk_style_context_add_provider(
+        gtk_widget_get_style_context(msgtext),
+        GTK_STYLE_PROVIDER(msgbubprovider),
+        GTK_STYLE_PROVIDER_PRIORITY_USER);
+
+    g_object_unref(msgbubprovider);
+
+    gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(msgvbox), msgtext);
+
+    GtkAdjustment* vadj =
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(chatscroll));
+
+    gtk_adjustment_set_value(
+        vadj,
+        gtk_adjustment_get_upper(vadj) -
+        gtk_adjustment_get_page_size(vadj));
 }
 static gboolean gui_send_im(GtkEventControllerKey* controller, guint keyval,
 							guint keycode, GdkModifierType state,

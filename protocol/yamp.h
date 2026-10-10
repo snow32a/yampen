@@ -1,7 +1,11 @@
 #pragma once
 #include <glib.h>
-#define YAMP_GUILD 1
 #define YAMP_DM 0
+#define YAMP_GC 1
+#define YAMP_SPACE_TEXT 40
+#define YAMP_SPACE_CATEGORY 41
+#define YAMP_SPACE_ANNOUNCEMENT 42
+#define YAMP_SPACE_INDEX 43
 #ifdef _WIN32
 #include <windows.h>
 #include <winsock2.h>
@@ -33,12 +37,14 @@ typedef struct {
 	status status;
 } YampUser;
 typedef struct YampChannel {
-	char id[17];
+	int type;
+	char id[16+1+16+1];
 	char* name;
 	struct YampChannel* children;
 	int nchildren;
 	int pos;
-	int type;
+	int npeople;
+	YampUser* people;
 } YampChannel;
 typedef struct {
 	char id[17];
@@ -49,15 +55,25 @@ typedef struct {
 	char* description;
 	int type;
 } YampSpace;
+typedef struct {
+    YampUser     usr;
+    YampChannel *conversations; int nconversations;
+    YampUser    *friends;       int nfriends;
+    YampSpace   *spaces;        int nspaces;
+    YampUser    *incfq;         int fqcount;
+    YampUser    *outfq;         int outfqcount;
+} YampLoginData;
 #include <openssl/ssl.h>
 int YAMPConnect(const char* server, int* fd_out, SSL** socket_out);
 int SplitAddress(char* address, char** username, char** server);
 int YAMPLogin(SSL* fd, char* username, char* password);
 int YAMPRegister(SSL* fd, char* username, char* password);
 int YAMPListBuddies(SSL* fd);
+int YAMPListConversations(SSL* fd);
 int YAMPSendIM(SSL* fd, char* where, char* content);
 int YAMPListSpaceChannels(SSL* fd, char* space);
 char* MakeDMChannel(const char* a, const char* b);
+char* MakeGCChannel(const char* a);
 gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out);
 int YAMPGetMessageHistory(SSL* fd, char* where);
 int YAMPInsertSpace(SSL* fd, char* name, char* display_name, int type,
@@ -68,3 +84,8 @@ int YAMPSendFriendReq(SSL* fd, char* to);
 int YAMPAcceptFriendReq(SSL* fd, char* user);
 int YAMPDenyFriendReq(SSL* fd, char* user);
 int YAMPUpdateUserProfile(SSL* fd, YampUser usr);
+extern char* YampHTTPAddress;
+char* YAMPGetHTTPBaseURI();
+int YAMPQueryYAMPHTTP();
+int YAMPStartDM(SSL* fd, char* targetusr);
+int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem);

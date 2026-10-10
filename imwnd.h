@@ -1,6 +1,5 @@
 #include <gtk/gtk.h>
 #include "protocol/yamp.h"
 #include <cjson/cJSON.h>
-void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces, YampUser* incfq,
-					   int fqcount, YampUser* outfq, int outfqcount);
+void StartMainIMWindow(const YampLoginData* dat);
 void CreateMainIMWindow(GtkApplication *app);

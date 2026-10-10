@@ -215,37 +215,15 @@ gboolean CloseLoginDialog(gpointer data) {
 
 	return G_SOURCE_REMOVE;
 }
-typedef struct {
-	YampUser usr;
-	YampSpace* spaces;
-	int nspaces;
-	YampUser* incfq;
-	int fqcount;
-	YampUser* outfq;
-	int outfqcount;
-} logincbpayload;
 gboolean DoLoggedIn(gpointer data) {
-	logincbpayload* params = data;
 	g_application_release(G_APPLICATION(g_application_get_default()));
-	YAMPListBuddies(mainsock);
-	StartMainIMWindow(params->usr, params->spaces, params->nspaces,
-					  params->incfq, params->fqcount, params->outfq,
-					  params->outfqcount);
+	StartMainIMWindow(data);
+	free(data);
 	CloseLoginDialog(NULL);
 	return G_SOURCE_REMOVE;
 }
-void onYAMPLoggedIn(YampUser usr, YampSpace* spaces, int nspaces,
-					YampUser* incfq, int fqcount, YampUser* outfq,
-					int outfqcount) {
-	logincbpayload* params = malloc(sizeof(logincbpayload));
-	params->usr = usr;
-	params->spaces = spaces;
-	params->nspaces = nspaces;
-	params->incfq = incfq;
-	params->fqcount = fqcount;
-	params->outfq = outfq;
-	params->outfqcount = outfqcount;
-	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, params, NULL);
+void onYAMPLoggedIn(const YampLoginData* dat) {
+	g_idle_add_full(G_PRIORITY_DEFAULT, DoLoggedIn, dat, NULL);
 }
 gboolean ErrorOnLoginFail(gpointer data) {
 	if (autoLoginPending && login_window == NULL) {

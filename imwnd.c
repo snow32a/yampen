@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <gtk/gtk.h>
 #include "imwnd.h"
+#include "gio/gio.h"
 #include "gio/gmenu.h"
 #include "glib-object.h"
 #include "glib.h"
@@ -19,6 +20,7 @@
 #include "insertspace.h"
 #include "notification.h"
 #include "usersettings.h"
+#include "gcmemselect.h"
 
 char* curUserID;
 GtkWidget* main_window;
@@ -38,12 +40,19 @@ GtkWidget* dmlist;
 GtkWidget* ListVBOX;
 GtkWidget* ListTitle;
 GtkWidget* suvbox;
-gboolean listmode = TRUE;
+GtkWidget* chattitle;
+gboolean listmode = FALSE;
 char* curSpace = NULL;
 char* curSpaceDisplay = NULL;
 CURL* curl;
 char* currentChat;
 char* pfp_dir;
+
+static size_t file_write_cb(char* ptr, size_t size, size_t nmemb,
+							void* userdata) {
+	return fwrite(ptr, size, nmemb, (FILE*)userdata);
+}
+
 static gboolean onUIDisconnected(gpointer none) {
 	GtkAlertDialog* alert = gtk_alert_dialog_new("Server disconnected!");
 	gtk_alert_dialog_show(alert, NULL);
@@ -55,6 +64,12 @@ typedef struct {
 	GtkWidget* EntryArea;
 	GtkWidget* ChatView;
 } EKeyPayload;
+
+YampChannel* cached_convs = NULL;
+int ncached_convs = 0;
+YampUser* cached_friends = NULL;
+int ncached_friends = 0;
+
 static gboolean EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 								guint keycode, GdkModifierType state,
 								gpointer user_data) {
@@ -165,12 +180,20 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		gtk_widget_unparent(wdg);
 	GtkWidget* child = gtk_widget_get_next_sibling(
 		gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
-	BuildUserProfile(*GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
-	char* name = gtk_label_get_text(GTK_LABEL(child));
-	char* recpid = g_object_get_data(G_OBJECT(child), "id");
-	currentChat = MakeDMChannel(recpid, curUserID);
-	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
-	YAMPGetMessageHistory(mainsock, currentChat);
+	int type = (int)g_object_get_data(G_OBJECT(child), "type");
+	if (type == YAMP_DM) {
+		BuildUserProfile(
+			*GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
+		char* name = gtk_label_get_text(GTK_LABEL(child));
+		currentChat = MakeDMChannel(curUserID, g_object_get_data(G_OBJECT(child), "id"));
+		gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
+		YAMPGetMessageHistory(mainsock, currentChat);
+	} else if (type == YAMP_GC){
+		char* name = gtk_label_get_text(GTK_LABEL(child));
+		currentChat = MakeGCChannel(g_object_get_data(G_OBJECT(child), "id"));
+		gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
+		YAMPGetMessageHistory(mainsock, currentChat);
+	}
 }
 void RecursiveDeselectChannelTree(GtkWidget* parentwdg,
 								  GtkWidget* skiplistbox) {
@@ -636,7 +659,7 @@ void onYAMPChannelsUpdated(YampChannel* channels, int n, char* space) {
 	}
 }
 typedef struct {
-	char* username;
+	char* id;
 	status stat;
 } StatusUpdatePayload;
 
@@ -658,7 +681,7 @@ static gboolean MainThreadStatusCB(gpointer data) {
 	StatusUpdatePayload* payload = data;
 
 	if (!listmode) {
-		free(payload->username);
+		free(payload->id);
 		free(payload);
 		return G_SOURCE_REMOVE;
 	}
@@ -673,9 +696,8 @@ static gboolean MainThreadStatusCB(gpointer data) {
 		if (!label)
 			continue;
 
-		const char* rowUsername =
-			g_object_get_data(G_OBJECT(label), "username");
-		if (rowUsername && strcmp(rowUsername, payload->username) == 0) {
+		const char* rowUsername = g_object_get_data(G_OBJECT(label), "id");
+		if (rowUsername && strcmp(rowUsername, payload->id) == 0) {
 			const char* color = StatusToColor(payload->stat.status);
 			GtkCssProvider* provider = gtk_css_provider_new();
 			char style[64];
@@ -690,24 +712,206 @@ static gboolean MainThreadStatusCB(gpointer data) {
 		}
 	}
 
-	free(payload->username);
+	free(payload->id);
 	free(payload);
 	return G_SOURCE_REMOVE;
 }
 
-void onYAMPStatusUpdate(char* name, status stat) {
+void onYAMPStatusUpdate(char* id, status stat) {
 	StatusUpdatePayload* payload = malloc(sizeof(StatusUpdatePayload));
-	payload->username = strdup(name);
+	payload->id = strdup(id);
 	payload->stat = stat;
 	g_idle_add(MainThreadStatusCB, payload);
 }
 void UserDetailsBoxOnClick(gpointer none) { SpawnSettings(); }
+
+void DMsListTopPagesCB(GtkListBox* lb, GtkListBoxRow* lbr, void* data) {
+	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "friends");
+}
+
+char* JoinUsernames(const YampUser* people, int n) {
+	size_t len = 1;
+	for (int i = 0; i < n; i++) {
+		const char* nm =
+			people[i].displayname ? people[i].displayname : people[i].username;
+		len += strlen(nm) + (i ? 2 : 0);
+	}
+
+	char* out = malloc(len);
+	if (!out)
+		return NULL;
+
+	char* p = out;
+	for (int i = 0; i < n; i++) {
+		const char* nm =
+			people[i].displayname ? people[i].displayname : people[i].username;
+		if (i) {
+			*p++ = ',';
+			*p++ = ' ';
+		}
+		size_t l = strlen(nm);
+		memcpy(p, nm, l);
+		p += l;
+	}
+	*p = '\0';
+	return out;
+}
+int InsertConvIntoList(YampChannel conv) {
+	if (conv.type == YAMP_DM) {
+		YampUser* members = conv.people;
+		YampUser usr; // the other user
+		if (strcmp(members[0].id, curUserID) == 0) {
+			usr = members[1];
+		} else {
+			usr = members[0];
+		}
+		char* dispname = usr.displayname ? usr.displayname : usr.username;
+		YampUser* heapusr = malloc(sizeof(YampUser));
+		*heapusr = (YampUser){0};
+		if (usr.displayname) {
+			heapusr->displayname = strdup(usr.displayname);
+		}
+		heapusr->username = strdup(usr.username);
+		if (usr.pfp) {
+			heapusr->pfp = strdup(usr.pfp);
+		}
+		strcpy(heapusr->id, usr.id);
+		if (usr.description) {
+			heapusr->description = strdup(usr.description);
+		}
+		InsertUserObject(heapusr->id, heapusr);
+		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+		GtkWidget* LBRow = gtk_list_box_row_new();
+		GtkWidget* LBRowLabel = gtk_label_new(usr.displayname);
+		GtkWidget* Pfp;
+		if (usr.pfp && strlen(usr.pfp)) {
+			curl_easy_setopt(curl, CURLOPT_URL, usr.pfp);
+			char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
+			FILE* fl = fopen(pfp_path, "wb");
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write_cb);
+			curl_easy_perform(curl);
+			fclose(fl);
+
+			Pfp = gtk_image_new_from_file(pfp_path);
+			gtk_widget_add_css_class(Pfp, "avatar");
+			gtk_widget_set_overflow(Pfp, GTK_OVERFLOW_HIDDEN);
+
+			InsertPfpPath(usr.id, pfp_path);
+
+		} else {
+			char pfppath[37];
+			sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
+					GetDefaultPfp(usr.id));
+			Pfp = gtk_image_new_from_resource(pfppath);
+		}
+		char* statusClr = StatusToColor(usr.status.status);
+		GtkCssProvider* provider = gtk_css_provider_new();
+		char* style = malloc(60);
+		sprintf(style, "image { border: 2px solid #%s; -gtk-icon-size: 32px; }",
+				statusClr);
+		gtk_css_provider_load_from_string(provider, style);
+		gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
+									   GTK_STYLE_PROVIDER(provider),
+									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+		g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
+		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
+		gtk_box_append(GTK_BOX(ItemBox), Pfp);
+		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
+		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
+		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
+		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
+	} else if (conv.type == YAMP_GC) {
+		// Currently the protocol doesnt fucking carry the name
+		// when we do so the joined name will just be used foor null named ones
+		YampUser* members = conv.people;
+		char* dispname = JoinUsernames(members,conv.npeople);
+		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+		GtkWidget* LBRow = gtk_list_box_row_new();
+		GtkWidget* LBRowLabel = gtk_label_new(dispname);
+		GtkWidget* Pfp;
+		char pfppath[37];
+		sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
+				GetDefaultPfp(conv.id));
+		Pfp = gtk_image_new_from_resource(pfppath);
+
+		GtkCssProvider* provider = gtk_css_provider_new();
+		char* style = malloc(60);
+		sprintf(style, "image { -gtk-icon-size: 32px; }");
+		gtk_css_provider_load_from_string(provider, style);
+		gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
+									   GTK_STYLE_PROVIDER(provider),
+									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+		g_object_set_data(G_OBJECT(LBRowLabel), "username", "Group Chat");
+		g_object_set_data(G_OBJECT(LBRowLabel), "id", conv.id);
+		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
+		gtk_box_append(GTK_BOX(ItemBox), Pfp);
+		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
+		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
+		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
+		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
+	}
+	return 1;
+}
+void OnGCInitMembersSelected(YampUser* users, int nusers) {
+	char** initmembers = malloc(sizeof(char*) * nusers);
+	for (int i = 0; i < nusers; i++) {
+		initmembers[i] = users[i].id;
+	}
+	YAMPCreateGC(mainsock, initmembers, nusers);
+	free(initmembers);
+}
+void OnCreateGCBtnClicked(GtkButton* btn, gpointer user_data) {
+	SpawnGCInitMemberSelector(cached_friends, ncached_friends,
+							  OnGCInitMembersSelected);
+}
 void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 	gtk_widget_add_css_class(dmsbutton, "active");
 	gtk_widget_remove_css_class(selectedspacebtn, "active");
-	selectedspacebtn = GTK_WIDGET(btn);
+	selectedspacebtn = NULL;
 	if (listmode == FALSE) {
-		YAMPListBuddies(mainsock);
+		GtkWidget* child;
+		while ((child = gtk_widget_get_first_child(ChannelSidebar)) != NULL)
+			gtk_widget_unparent(child);
+		dmlist = gtk_list_box_new();
+		GtkWidget* toptabs = gtk_list_box_new();
+		GtkWidget* friendscontent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+		gtk_box_append(GTK_BOX(friendscontent),
+					   gtk_image_new_from_icon_name("dms"));
+		gtk_box_append(GTK_BOX(friendscontent), gtk_label_new("Friends"));
+		GtkWidget* friendstab = gtk_list_box_row_new();
+		gtk_widget_add_css_class(friendstab, "toptabs");
+		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(friendstab),
+								   friendscontent);
+		g_signal_connect(toptabs, "row-selected", G_CALLBACK(DMsListTopPagesCB),
+						 NULL);
+		gtk_list_box_append(GTK_LIST_BOX(toptabs), friendstab);
+		gtk_box_append(GTK_BOX(ChannelSidebar), toptabs);
+		GtkWidget* dmheader_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+		gtk_widget_add_css_class(dmheader_row, "channel-category");
+
+		GtkWidget* dmheader = gtk_label_new("Direct Messages");
+		gtk_widget_set_halign(dmheader, GTK_ALIGN_START);
+		gtk_widget_set_hexpand(dmheader, TRUE);
+		gtk_widget_add_css_class(dmheader, "channel-category");
+
+		GtkWidget* newgc_btn =
+			gtk_button_new_from_icon_name("list-add-symbolic");
+		gtk_widget_add_css_class(newgc_btn, "flat");
+		gtk_widget_add_css_class(newgc_btn, "circular");
+		gtk_widget_set_valign(newgc_btn, GTK_ALIGN_CENTER);
+		g_signal_connect(newgc_btn, "clicked", G_CALLBACK(OnCreateGCBtnClicked),
+						 NULL);
+
+		gtk_box_append(GTK_BOX(dmheader_row), dmheader);
+		gtk_box_append(GTK_BOX(dmheader_row), newgc_btn);
+		gtk_box_append(GTK_BOX(ChannelSidebar), dmheader_row);
+		gtk_box_append(GTK_BOX(ChannelSidebar), dmlist);
+		g_signal_connect(dmlist, "row-selected", G_CALLBACK(OnDMRowSelected),
+						 NULL);
+		for (int i = 0; i < ncached_convs; i++) {
+			InsertConvIntoList(cached_convs[i]);
+		}
 		listmode = TRUE;
 	}
 }
@@ -751,6 +955,7 @@ typedef struct {
 void AcceptFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
 	YAMPAcceptFriendReq(mainsock, payload->username);
+	YAMPStartDM(mainsock, payload->username);
 	gtk_widget_unparent(payload->notif);
 	free(data);
 }
@@ -805,13 +1010,39 @@ void ScrollChatToBottom(void) {
 	gtk_widget_add_tick_callback(chatscroll, scroll_tick, NULL, NULL);
 }
 
-static size_t file_write_cb(char* ptr, size_t size, size_t nmemb,
-							void* userdata) {
-	return fwrite(ptr, size, nmemb, (FILE*)userdata);
+void UploadDialogFinish(GObject* source_object, GAsyncResult* result,
+						gpointer user_data) {}
+void OnUploadBtnClicked(GtkButton* btn, void* data) {
+	GtkFileDialog* dlg = gtk_file_dialog_new();
+	gtk_file_dialog_open(dlg, NULL, NULL, UploadDialogFinish, NULL);
 }
-void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
-					   YampUser* incfq, int fqcount, YampUser* outfq,
-					   int outfqcount) {
+void StartMainIMWindow(const YampLoginData* dat) {
+	YampUser* heapusr = malloc(sizeof(YampUser));
+	*heapusr = dat->usr;
+	heapusr->username = strdup(heapusr->username);
+	if (heapusr->displayname) {
+		heapusr->displayname = strdup(heapusr->displayname);
+	}
+	if (heapusr->pfp) {
+		heapusr->pfp = strdup(heapusr->pfp);
+	}
+	if (heapusr->description) {
+		heapusr->description = strdup(heapusr->description);
+	}
+	printf("%s\n",dat->usr.id);
+	strcpy(heapusr->id, dat->usr.id);
+	InsertUserObject(heapusr->id, heapusr);
+	char* displayName = dat->usr.displayname;
+	if (!displayName) {
+		displayName = dat->usr.username;
+	}
+	curUserID = heapusr->id;
+
+
+	cached_convs = dat->conversations;
+	ncached_convs = dat->nconversations;
+	cached_friends = dat->friends;
+	ncached_friends = dat->nfriends;
 	const char* cache_dir = g_get_user_cache_dir();
 	pfp_dir = g_build_filename(cache_dir, "yampen", "pfps", NULL);
 	g_mkdir_with_parents(pfp_dir, 0700);
@@ -836,7 +1067,7 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	GtkWidget* chatvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	suvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	gtk_widget_set_hexpand(suvbox, 0);
-	BuildUserProfile(usr);
+	BuildUserProfile(dat->usr);
 	gtk_widget_set_size_request(suvbox, 300, -1);
 	// su stands for space & user here, had no better term, the box is for both
 	// guild member listing and user profiles
@@ -873,7 +1104,6 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	gtk_button_set_child(GTK_BUTTON(dmsbutton), dmsbtnimg);
 	g_signal_connect(dmsbutton, "clicked", G_CALLBACK(on_dms_btn_clicked),
 					 NULL);
-
 	GtkCssProvider* dmsprovider = gtk_css_provider_new();
 	gtk_css_provider_load_from_string(
 		dmsprovider, "button {"
@@ -942,6 +1172,8 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	gtk_box_append(GTK_BOX(hbox), ChannelSidebar);
 	gtk_box_append(GTK_BOX(panelhbox), stackpane);
 
+	chattitle = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);
+	gtk_box_append(GTK_BOX(chatvbox), chattitle);
 	chatscroll = gtk_scrolled_window_new();
 	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chatscroll),
 								   GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
@@ -966,6 +1198,8 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	GtkWidget* plus_btn = gtk_button_new_from_icon_name("list-add-symbolic");
 	gtk_widget_add_css_class(plus_btn, "flat");
 	gtk_widget_add_css_class(plus_btn, "circular");
+	gtk_widget_set_sensitive(plus_btn, YAMPQueryYAMPHTTP());
+	g_signal_connect(plus_btn, "clicked", G_CALLBACK(OnUploadBtnClicked), NULL);
 
 	GtkWidget* entry = gtk_text_view_new();
 	gtk_widget_add_css_class(entry, "plain");
@@ -994,50 +1228,28 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	gtk_box_append(GTK_BOX(frame_box), emoji_btn);
 	gtk_box_append(GTK_BOX(inputhbox), frame_box);
 
-	EKeyPayload* dat = malloc(sizeof(EKeyPayload));
-	dat->EntryArea = entry;
-	dat->ChatView = chatarea;
+	EKeyPayload* entrydat = malloc(sizeof(EKeyPayload));
+	entrydat->EntryArea = entry;
+	entrydat->ChatView = chatarea;
 	GtkEventController* key_controller = gtk_event_controller_key_new();
 	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(EntryKeyHandler),
-					 dat);
+					 entrydat);
 	gtk_widget_add_controller(entry, GTK_EVENT_CONTROLLER(key_controller));
 
-
-
-	YampUser* heapusr = malloc(sizeof(YampUser));
-	*heapusr = usr;
-	heapusr->username = strdup(heapusr->username);
-	if (heapusr->displayname) {
-		heapusr->displayname = strdup(heapusr->displayname);
-	}
-	if (heapusr->pfp) {
-		heapusr->pfp = strdup(heapusr->pfp);
-	}
-	if (heapusr->description) {
-		heapusr->description = strdup(heapusr->description);
-	}
-	strcpy(heapusr->id, usr.id);
-	InsertUserObject(heapusr->id, heapusr);
-	char* displayName = usr.displayname;
-	if (!displayName) {
-		displayName = usr.username;
-	}
-	curUserID = heapusr->id;
-
-	if (usr.pfp && strlen(usr.pfp)) {
-		curl_easy_setopt(curl, CURLOPT_URL, usr.pfp);
-		char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
+	if (dat->usr.pfp && strlen(dat->usr.pfp)) {
+		curl_easy_setopt(curl, CURLOPT_URL, dat->usr.pfp);
+		char* pfp_path = g_build_filename(pfp_dir, dat->usr.id, NULL);
 		FILE* fl = fopen(pfp_path, "wb");
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write_cb);
 		curl_easy_perform(curl);
 		fclose(fl);
-		InsertPfpPath(usr.id, pfp_path);
+		InsertPfpPath(dat->usr.id, pfp_path);
 		SelfPfp = gtk_image_new_from_file(pfp_path);
 	} else {
 		char pfppath[37];
 		sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
-				GetDefaultPfp(usr.id));
+				GetDefaultPfp(dat->usr.id));
 		SelfPfp = gtk_image_new_from_resource(pfppath);
 	}
 	gtk_widget_add_css_class(SelfPfp, "avatar");
@@ -1062,8 +1274,8 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	DisplayNameLabel = gtk_label_new(displayName);
 	gtk_box_append(GTK_BOX(UserDetailsBox), UsernameBox);
 	gtk_box_append(GTK_BOX(UsernameBox), DisplayNameLabel);
-	if (usr.displayname && strcmp(usr.displayname, usr.username) != 0) {
-		UsernameLabel = gtk_label_new(usr.username);
+	if (dat->usr.displayname && strcmp(dat->usr.displayname, dat->usr.username) != 0) {
+		UsernameLabel = gtk_label_new(dat->usr.username);
 		gtk_widget_set_opacity(UsernameLabel, 0.6f);
 		gtk_box_append(GTK_BOX(UsernameBox), UsernameLabel);
 	}
@@ -1081,80 +1293,19 @@ void StartMainIMWindow(YampUser usr, YampSpace* spaces, int nspaces,
 	GtkGesture* click = gtk_gesture_click_new();
 	g_signal_connect(click, "pressed", G_CALLBACK(UserDetailsBoxOnClick), NULL);
 	gtk_widget_add_controller(UserDetailsBox, GTK_EVENT_CONTROLLER(click));
-	LoadSpaces(spaces, nspaces);
-	for (int i = 0; i < fqcount; i++) {
-		CreateFQNotification(incfq[i]);
+	LoadSpaces(dat->spaces, dat->nspaces);
+	for (int i = 0; i < dat->fqcount; i++) {
+		CreateFQNotification(dat->incfq[i]);
 	}
 	gtk_window_set_child(GTK_WINDOW(main_window), notifoverlay);
-}
-void DMsListTopPagesCB(GtkListBox* lb, GtkListBoxRow* lbr, void* data) {
-	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "friends");
+	on_dms_btn_clicked(GTK_BUTTON(dmsbutton), NULL);
 }
 typedef struct {
 	YampUser* users;
 	int nusers;
 } MainThreadFriendPayload;
-int InsertFriendIntoList(YampUser usr) {
-	char* dispname = usr.displayname ? usr.displayname : usr.username;
-	YampUser* heapusr = malloc(sizeof(YampUser));
-	*heapusr = (YampUser){0};
-	if (usr.displayname) {
-		heapusr->displayname = strdup(usr.displayname);
-	}
-	heapusr->username = strdup(usr.username);
-	if (usr.pfp) {
-		heapusr->pfp = strdup(usr.pfp);
-	}
-	strcpy(heapusr->id, usr.id);
-	if (usr.description) {
-		heapusr->description = strdup(usr.description);
-	}
-	InsertUserObject(heapusr->id, heapusr);
-	GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-	GtkWidget* LBRow = gtk_list_box_row_new();
-	GtkWidget* LBRowLabel = gtk_label_new(usr.displayname);
-	GtkWidget* Pfp;
-	if (usr.pfp && strlen(usr.pfp)) {
-		curl_easy_setopt(curl, CURLOPT_URL, usr.pfp);
-		char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
-		FILE* fl = fopen(pfp_path, "wb");
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write_cb);
-		curl_easy_perform(curl);
-		fclose(fl);
-
-		Pfp = gtk_image_new_from_file(pfp_path);
-		gtk_widget_add_css_class(Pfp, "avatar");
-		gtk_widget_set_overflow(Pfp, GTK_OVERFLOW_HIDDEN);
-
-		InsertPfpPath(usr.id, pfp_path);
-
-	} else {
-		char pfppath[37];
-		sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
-				GetDefaultPfp(usr.id));
-		Pfp = gtk_image_new_from_resource(pfppath);
-	}
-	char* statusClr = StatusToColor(usr.status.status);
-	GtkCssProvider* provider = gtk_css_provider_new();
-	char* style = malloc(60);
-	sprintf(style, "image { border: 2px solid #%s; -gtk-icon-size: 32px; }",
-			statusClr);
-	gtk_css_provider_load_from_string(provider, style);
-	gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
-								   GTK_STYLE_PROVIDER(provider),
-								   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-	g_object_set_data(G_OBJECT(LBRowLabel), "username", heapusr->username);
-	g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
-	gtk_box_append(GTK_BOX(ItemBox), Pfp);
-	gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
-	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
-	gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
-	gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
-
-	return 1;
-}
 static gboolean MainThreadFriendCB(gpointer data) {
+	/*
 	MainThreadFriendPayload* payload = data;
 	GtkWidget* child;
 	while ((child = gtk_widget_get_first_child(ChannelSidebar)) != NULL)
@@ -1174,15 +1325,16 @@ static gboolean MainThreadFriendCB(gpointer data) {
 	gtk_box_append(GTK_BOX(ChannelSidebar), dmlist);
 	g_signal_connect(dmlist, "row-selected", G_CALLBACK(OnDMRowSelected), NULL);
 	for (int i = 0; i < payload->nusers; i++) {
-		InsertFriendIntoList(payload->users[i]);
+		// InsertFriendIntoList(payload->users[i]);
 	}
 	free(payload->users);
 	free(payload);
 	return G_SOURCE_REMOVE;
+	*/
 }
 gboolean MainThreadNewFriend(void* rawfriend) {
 	YampUser* friend = rawfriend;
-	InsertFriendIntoList(*friend);
+	// InsertFriendIntoList(*friend);
 	free(friend);
 	return G_SOURCE_REMOVE;
 }
@@ -1190,6 +1342,11 @@ void onYAMPNewFriend(YampUser friend) {
 	YampUser* heapfriend = malloc(sizeof(YampUser));
 	*heapfriend = friend;
 	g_idle_add(MainThreadNewFriend, heapfriend);
+}
+void onYAMPNewConversation(YampChannel conv) {
+	YampChannel* heapconv = malloc(sizeof(YampChannel));
+	*heapconv = conv;
+	g_idle_add(MainThreadNewFriend, heapconv);
 }
 void onYAMPFriendsListed(YampUser* friends, int nfriends) {
 	MainThreadFriendPayload* payload = malloc(sizeof(MainThreadFriendPayload));

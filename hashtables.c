@@ -18,10 +18,10 @@ static void FreeUserObj(gpointer data) {
 	g_free(t);
 }
 void InitUserIDTable() {
-	dtt = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, FreeUserObj);
+	dtt = g_hash_table_new(g_str_hash, g_str_equal);
 }
 void InitSpaceIDTable() {
-	stt = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, FreeSpaceObj);
+	stt = g_hash_table_new(g_str_hash, g_str_equal);
 }
 void InitChatWindowTable() {
 	chatwndmap = g_hash_table_new(g_str_hash, g_str_equal);
