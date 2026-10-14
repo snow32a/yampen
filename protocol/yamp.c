@@ -503,9 +503,10 @@ void* YAMPRecvLoop(void* fd) {
 						strdup(cJSON_GetObjectItem(eventdata, "content")
 								   ->valuestring));
 				} else if (strcmp(event->valuestring, "StatusUpdate") == 0) {
+					printf("Status update event\n");
 					cJSON* ustatus = cJSON_GetObjectItem(eventdata, "status");
 					char* user =
-						cJSON_GetObjectItem(eventdata, "name")->valuestring;
+						cJSON_GetObjectItem(eventdata, "user")->valuestring;
 					status pstatus;
 					pstatus.status =
 						cJSON_GetObjectItem(ustatus, "status")->valuestring;
