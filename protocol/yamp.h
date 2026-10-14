@@ -90,3 +90,6 @@ char* YAMPGetHTTPBaseURI();
 int YAMPQueryYAMPHTTP();
 int YAMPStartDM(SSL* fd, char* targetusr);
 int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem);
+
+void YampStatusDupStrings(status* s);
+void YampStatusFreeStrings(status* s);

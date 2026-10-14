@@ -851,6 +851,7 @@ static gboolean MainThreadStatusCB(gpointer data) {
 
 	free(payload->id);
 	free(payload);
+	YampStatusFreeStrings(&payload->stat);
 	return G_SOURCE_REMOVE;
 }
 
@@ -858,6 +859,7 @@ void onYAMPStatusUpdate(char* id, status stat) {
 	StatusUpdatePayload* payload = malloc(sizeof(StatusUpdatePayload));
 	payload->id = strdup(id);
 	payload->stat = stat;
+	YampStatusDupStrings(&payload->stat);
 	g_idle_add(MainThreadStatusCB, payload);
 }
 void UserDetailsBoxOnClick(gpointer none) { SpawnSettings(); }
