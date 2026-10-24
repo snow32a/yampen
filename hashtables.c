@@ -2,11 +2,13 @@
 #include "hashtables.h"
 #include <gtk/gtk.h>
 #include "protocol/yamp.h"
+#include "types.h"
 GHashTable* dtt;
 GHashTable* stt;
 GHashTable* chatwndmap;
 GHashTable* desctt;
 GHashTable* pfpmap;
+GHashTable *MessageSilhouettes;
 static void FreeSpaceObj(gpointer data) {
 	YampSpace* t = data;
 	// g_free(t->name);
@@ -29,6 +31,14 @@ void InitChatWindowTable() {
 void InitDescriptionTable() {
 	desctt = g_hash_table_new(g_str_hash, g_str_equal);
 }
+void InitMessageSilhouettes(void) {
+    MessageSilhouettes = g_hash_table_new_full(
+        g_direct_hash,
+        g_direct_equal,
+        NULL,
+        free
+    );
+}
 void InitPfpTable() { pfpmap = g_hash_table_new(g_str_hash, g_str_equal); }
 void InitAllTables() {
 	InitUserIDTable();
@@ -36,6 +46,7 @@ void InitAllTables() {
 	InitDescriptionTable();
 	InitChatWindowTable();
 	InitPfpTable();
+	InitMessageSilhouettes();
 }
 void RegisterChatWindow(GtkWidget* Window, char* forWho) {
 	g_hash_table_insert(chatwndmap, forWho, Window);
@@ -65,4 +76,31 @@ char* InsertPfpPath(char* username, char* display_name) {
 }
 char* GetPfpPath(char* username) {
 	return g_hash_table_lookup(pfpmap, username);
+}
+static int nextmsgid = 0;
+
+int RegisterMessageSilhouette(GtkWidget *msgrow) {
+    MessageSilhouette *silhouette = malloc(sizeof(*silhouette));
+
+    silhouette->index = nextmsgid++;
+    silhouette->msgrow = msgrow;
+
+    g_hash_table_insert(
+        MessageSilhouettes,
+        GINT_TO_POINTER(silhouette->index),
+        silhouette
+    );
+
+    return silhouette->index;
+}
+GtkWidget *GetMessageSilhouettes(int index) {
+    MessageSilhouette *silhouette = g_hash_table_lookup(
+        MessageSilhouettes,
+        GINT_TO_POINTER(index)
+    );
+
+    if (!silhouette)
+        return NULL;
+
+    return silhouette->msgrow;
 }

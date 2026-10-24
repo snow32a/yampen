@@ -9,6 +9,7 @@ BUILD_DIR := build
 ifeq ($(PLATFORM),win32)
 
 build/yampen.exe: $(SRC)
+	./gen-resources.sh
 	@mkdir -p $(BUILD_DIR)
 	$(CROSS_COMPILE)$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-o $(BUILD_DIR)/yampen.exe \
@@ -52,6 +53,7 @@ build/yampen.exe: $(SRC)
 	makensis setup.nsi
 else
 build/yampen: $(SRC)
+	./gen-resources.sh
 	@mkdir -p $(BUILD_DIR)
 	glib-compile-resources assets.gresource.xml \
 		--sourcedir=. \

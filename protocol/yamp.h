@@ -55,6 +55,15 @@ typedef struct {
 	char* description;
 	int type;
 } YampSpace;
+typedef struct YampMessage {
+	char id[16+1];
+	YampUser author;
+	int type; // for later use
+	uint64_t timestamp;
+	char channel[16+1+16+1];
+	char* content;
+	struct YampMessage* reply;
+} YampMessage;
 typedef struct {
     YampUser     usr;
     YampChannel *conversations; int nconversations;
@@ -70,7 +79,7 @@ int YAMPLogin(SSL* fd, char* username, char* password);
 int YAMPRegister(SSL* fd, char* username, char* password);
 int YAMPListBuddies(SSL* fd);
 int YAMPListConversations(SSL* fd);
-int YAMPSendIM(SSL* fd, char* where, char* content);
+int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce);
 int YAMPListSpaceChannels(SSL* fd, char* space);
 char* MakeDMChannel(const char* a, const char* b);
 char* MakeGCChannel(const char* a);
@@ -93,3 +102,14 @@ int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem);
 
 void YampStatusDupStrings(status* s);
 void YampStatusFreeStrings(status* s);
+
+int YAMPJoinChannel(SSL* fd, char* channel);
+int YAMPLeaveChannel(SSL* fd, char* channel);
+int YAMPTyping(SSL* fd, char* channel);
+
+YampMessage* DupMessageObject(YampMessage* msg);
+void FreeMessageObject(YampMessage* msg);
+int YAMPDeleteMessage(SSL* fd, char* msg_id);
+YampUser YampUserDeepCopy(const YampUser* u);
+void YampUserFree(YampUser* u);
+YampUser* DupUserType(const YampUser* u);

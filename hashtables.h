@@ -12,3 +12,6 @@ char *InsertPfpPath(char *username, char *display_name);
 char *GetPfpPath(char *username);
 void InsertSpaceObject(char *id, YampSpace* obj);
 YampSpace *GetSpaceObject(char *id);
+void InitMessageSilhouettes(void);
+int RegisterMessageSilhouette(GtkWidget *msgrow);
+GtkWidget *GetMessageSilhouettes(int index);

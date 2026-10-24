@@ -30,7 +30,73 @@ static GtkApplication* login_app;
 static int autoLoginPending;
 static char* prefillUsername;
 static void BuildLoginWindow(GtkApplication* app);
+#if HAVE_LIBSECRET
+gboolean UnlockDefaultKeyring(void) {
+    GError *error = NULL;
 
+    SecretService *service = secret_service_get_sync(
+        SECRET_SERVICE_LOAD_COLLECTIONS,
+        NULL,
+        &error
+    );
+
+    if (!service) {
+        fprintf(stderr, "Secret Service: %s\n",
+                error ? error->message : "unavailable");
+        g_clear_error(&error);
+        return FALSE;
+    }
+
+    SecretCollection *collection =
+        secret_collection_for_alias_sync(
+            service,
+            "default",
+            SECRET_COLLECTION_NONE,
+            NULL,
+            &error
+        );
+
+    if (!collection) {
+        if (error) {
+            fprintf(stderr, "Default keyring: %s\n", error->message);
+        }
+
+        g_clear_error(&error);
+        g_object_unref(service);
+        return FALSE;
+    }
+
+    gboolean success = TRUE;
+
+    if (secret_collection_get_locked(collection)) {
+        GList *targets = g_list_append(NULL, collection);
+        GList *unlocked = NULL;
+
+        gint count = secret_service_unlock_sync(
+            service,
+            targets,
+            NULL,
+            &unlocked,
+            &error
+        );
+
+        success = count >= 0 && error == NULL;
+
+        if (error) {
+            fprintf(stderr, "Keyring unlock: %s\n", error->message);
+            g_clear_error(&error);
+        }
+
+        g_list_free(unlocked);
+        g_list_free(targets);
+    }
+
+    g_object_unref(collection);
+    g_object_unref(service);
+
+    return success;
+}
+#endif
 int SecretServiceAvail(void) {
 	GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
 	if (!bus)
@@ -280,19 +346,25 @@ int GetSavedLoginData(SavedCred* out) {
 }
 #endif
 void DisplayLoginDialog(GtkApplication* app) {
+	login_app = app;
 	g_application_hold(G_APPLICATION(app));
+
 #if HAVE_LIBSECRET
-	if (SecretServiceAvail) {
-		SavedCred cred;
+	if (SecretServiceAvail() && UnlockDefaultKeyring()) {
+		SavedCred cred = {0};
+
 		if (GetSavedLoginData(&cred)) {
 			NwLogin(cred.uns, cred.pwd);
+
 			free(cred.uns);
 			secret_password_free(cred.pwd);
 			return;
 		}
+
+		free(cred.uns);
 	}
 #endif
-	login_app = app;
+
 	BuildLoginWindow(app);
 }
 static void BuildLoginWindow(GtkApplication* app) {

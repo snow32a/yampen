@@ -14,6 +14,10 @@
     background-color: #f25858ff;
     color:#404040;
 }
+.button.emoji-sel{
+    background-color: #f25858ff;
+    color:#404040;
+}
 
 .h1 { font-size: 2em;    font-weight: bold; }
 .h2 { font-size: 1.5em;  font-weight: bold; }
@@ -30,4 +34,38 @@
 .toptabs:selected{
     background-color: #f25858ff;
     color:#404040;
+}
+
+.bold{
+    font-weight:bold;
+}
+.italic{
+    font-style:italic;
+}
+.underline{
+    text-decoration:underline;
+}
+.overline{
+    text-decoration:overline;
+}
+.strike{
+    text-decoration:line-through;
+}
+.monospace{
+    font-family:monospace;
+}
+.inline-code{
+    background-color:rgba(0,0,0,0.1);
+    color:#C0C0C0;
+}
+.spoiler{
+    background-color: #404040;
+    color:transparent;
+}
+.reply_border{
+    background-color: #f25858ff;
+}
+.reply_body{
+    padding: 5px;
+    background-color: #f2585840;
 }

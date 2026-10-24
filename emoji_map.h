@@ -6954,3 +6954,5 @@ static const EmojiMap emoji_map[] = {
     {"fondue", "🫕" },
     {"teapot", "🫖" },
 };
+
+static int n_emoji_map = sizeof(emoji_map) / sizeof(EmojiMap);

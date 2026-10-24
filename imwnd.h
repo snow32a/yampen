@@ -3,3 +3,11 @@
 #include <cjson/cJSON.h>
 void StartMainIMWindow(const YampLoginData* dat);
 void CreateMainIMWindow(GtkApplication *app);
+extern char* currentChat;
+extern char* curUserID;
+extern GtkWidget* chatscroll;
+extern GtkWidget* chatarea;
+void ScrollChatToBottom(void);
+extern GtkWidget* replyindicator;
+extern int isReplying;
+extern char* ReplyingToMsg;

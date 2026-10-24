@@ -38,7 +38,11 @@ extern void onYAMPFriendRequestReceived(char* username);
 extern void onYAMPFriendReqSent(int success);
 extern void onYAMPRegisterResult(int success);
 extern void onYAMPFriendReqResolved(char* username, int success);
-
+extern void onYAMPReceiveIM(YampMessage* msg, int nonce);
+extern void onYAMPTyping(YampUser user, char* channelid);
+extern void onYAMPMessageDeleted(char* message_id);
+extern void onYAMPChannelJoined(YampUser* user, char* channel_id);
+extern void onYAMPChannelLeave(YampUser* user, char* channel_id);
 
 static char* safe_strdup(const char* s) { return s ? strdup(s) : NULL; }
 static void CopyID(char* dst, size_t cap, const char* src) {
@@ -68,6 +72,12 @@ YampUser YampUserClone(const YampUser* u) { return *u; } /* strings borrowed */
 YampUser YampUserDeepCopy(const YampUser* u) {
 	YampUser c = *u;
 	YampUserDupStrings(&c);
+	return c;
+}
+YampUser* DupUserType(const YampUser* u) {
+	YampUser* c = malloc(sizeof(YampUser));
+	*c = *u;
+	YampUserDupStrings(c);
 	return c;
 }
 /******************************************************
@@ -153,9 +163,7 @@ char* MakeGCChannel(const char* a) {
 	ret[0] = '&';
 	return ret;
 }
-const char* ParseGCChannel(const char* a) {
-	return a+1;
-}
+const char* ParseGCChannel(const char* a) { return a + 1; }
 
 //////////////////////////////////////////
 ///    YAMP'S WHERE PARAMETER STYLE    ///
@@ -200,7 +208,6 @@ gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out) {
 		return TRUE;
 	}
 }
-extern void onYAMPReceiveIM(char* username, char* where, char* data);
 int TLSYAMPSend(SSL* fd, void* payload, uint32_t size) {
 	uint32_t NlSize = htonl(size);
 	SSL_write(fd, &NlSize, 4);
@@ -262,14 +269,14 @@ YampUser ParseUserObject(cJSON* rawusr) {
 	return usr;
 }
 YampChannel RecursiveParseChannel(cJSON* raw) {
-	YampChannel ret={0};
+	YampChannel ret = {0};
 	cJSON* pos = cJSON_GetObjectItem(raw, "position");
-	if(pos){
+	if (pos) {
 		ret.pos = pos->valueint;
 	}
 	ret.type = cJSON_GetObjectItem(raw, "type")->valueint;
 	cJSON* name = cJSON_GetObjectItem(raw, "name");
-	if(name){
+	if (name) {
 		ret.name = safe_strdup(name->valuestring);
 	}
 	strcpy(ret.id, cJSON_GetObjectItem(raw, "id")->valuestring);
@@ -291,10 +298,12 @@ YampChannel RecursiveParseChannel(cJSON* raw) {
 	const cJSON* jpeople = cJSON_GetObjectItem(raw, "members");
 	const char* addr = cJSON_GetStringValue(cJSON_GetObjectItem(raw, "id"));
 	ret.npeople = cJSON_GetArraySize(jpeople);
-	ret.people = malloc(sizeof(YampUser)*cJSON_GetArraySize(jpeople));
+	ret.people = malloc(sizeof(YampUser) * cJSON_GetArraySize(jpeople));
 	int i = 0;
 	const cJSON* item;
-	cJSON_ArrayForEach(item, jpeople) { ret.people[i++] = ParseUserObject(item); }
+	cJSON_ArrayForEach(item, jpeople) {
+		ret.people[i++] = ParseUserObject(item);
+	}
 
 	return ret;
 }
@@ -347,6 +356,37 @@ cJSON* CreateUserObject(YampUser user) {
 	}
 
 	return returnObj;
+}
+void FreeMessageObject(YampMessage* msg) {
+	free(msg->content);
+	if (msg->reply)
+		FreeMessageObject(msg->reply);
+	free(msg);
+}
+YampMessage* ParseMessageObject(cJSON* object) {
+	YampMessage* msg = malloc(sizeof(YampMessage));
+	*msg = (YampMessage){0};
+	msg->author = ParseUserObject(cJSON_GetObjectItem(object, "author"));
+	msg->content = strdup(cJSON_GetObjectItem(object, "content")->valuestring);
+	strncpy(msg->channel, cJSON_GetObjectItem(object, "channel")->valuestring,
+			34);
+	if (cJSON_GetObjectItem(object, "reply")) {
+		msg->reply = ParseMessageObject(cJSON_GetObjectItem(object, "reply"));
+	}
+	strncpy(msg->id, cJSON_GetObjectItem(object, "id")->valuestring, 17);
+	msg->timestamp = cJSON_GetObjectItem(object, "timestamp")->valueint;
+	msg->type = cJSON_GetObjectItem(object, "type")->valueint;
+	return msg;
+}
+YampMessage* DupMessageObject(YampMessage* msg){
+	YampMessage* heapmsg = malloc(sizeof(YampMessage));
+	*heapmsg=*msg;
+	heapmsg->content=strdup(msg->content);
+	heapmsg->author = YampUserDeepCopy(&heapmsg->author);
+	if(msg->reply){
+		heapmsg->reply = DupMessageObject(msg->reply);
+	}
+	return heapmsg;
 }
 
 void* YAMPRecvLoop(void* fd) {
@@ -423,8 +463,8 @@ void* YAMPRecvLoop(void* fd) {
 						int nconvs = cJSON_IsArray(rawconvs)
 										 ? cJSON_GetArraySize(rawconvs)
 										 : 0;
-						YampChannel* convs = malloc(
-							sizeof(YampChannel) * (nconvs ? nconvs : 1));
+						YampChannel* convs =
+							malloc(sizeof(YampChannel) * (nconvs ? nconvs : 1));
 						for (int i = 0; i < nconvs; i++) {
 							convs[i] = RecursiveParseChannel(
 								cJSON_GetArrayItem(rawconvs, i));
@@ -441,19 +481,19 @@ void* YAMPRecvLoop(void* fd) {
 								cJSON_GetArrayItem(rawfriends, i));
 						}
 						YampLoginData dat;
-						dat.usr=usr;
-						dat.conversations=convs;
-						dat.nconversations=nconvs;
-						dat.friends=friends;
-						dat.nfriends=nfriends;
-						dat.spaces=spaces;
-						dat.nspaces=nspaces;
-						dat.incfq=incoming_fq;
-						dat.fqcount=cJSON_GetArraySize(raw_incoming_fq);
-						dat.outfq=outgoing_fq;
-						dat.outfqcount=cJSON_GetArraySize(raw_outgoing_fq);
+						dat.usr = usr;
+						dat.conversations = convs;
+						dat.nconversations = nconvs;
+						dat.friends = friends;
+						dat.nfriends = nfriends;
+						dat.spaces = spaces;
+						dat.nspaces = nspaces;
+						dat.incfq = incoming_fq;
+						dat.fqcount = cJSON_GetArraySize(raw_incoming_fq);
+						dat.outfq = outgoing_fq;
+						dat.outfqcount = cJSON_GetArraySize(raw_outgoing_fq);
 						YampLoginData* heapdat = malloc(sizeof(YampLoginData));
-						*heapdat=dat;
+						*heapdat = dat;
 						onYAMPLoggedIn(heapdat);
 					} else {
 						onYAMPLoginFail();
@@ -473,14 +513,10 @@ void* YAMPRecvLoop(void* fd) {
 						   0) {
 					cJSON* msgarr = cJSON_GetObjectItem(response, "messages");
 					for (int i = 0; i < cJSON_GetArraySize(msgarr); i++) {
-						cJSON* msg = cJSON_GetArrayItem(msgarr, i);
-						onYAMPReceiveIM(
-							strdup(cJSON_GetObjectItem(msg, "author")
-									   ->valuestring),
-							strdup(cJSON_GetObjectItem(msg, "channel")
-									   ->valuestring),
-							strdup(cJSON_GetObjectItem(msg, "content")
-									   ->valuestring));
+						cJSON* cmsg = cJSON_GetArrayItem(msgarr, i);
+						YampMessage* msg = ParseMessageObject(cmsg);
+						onYAMPReceiveIM(msg, -1);
+						FreeMessageObject(msg);
 					}
 				} else if (strcmp(reqid->valuestring, "SendFriendReq") == 0) {
 					onYAMPFriendReqSent(success);
@@ -495,13 +531,15 @@ void* YAMPRecvLoop(void* fd) {
 				cJSON* event = cJSON_GetObjectItem(srvr, "event");
 				cJSON* eventdata = cJSON_GetObjectItem(srvr, "data");
 				if (strcmp(event->valuestring, "recvim") == 0) {
-					onYAMPReceiveIM(
-						strdup(cJSON_GetObjectItem(eventdata, "author")
-								   ->valuestring),
-						strdup(cJSON_GetObjectItem(eventdata, "channel")
-								   ->valuestring),
-						strdup(cJSON_GetObjectItem(eventdata, "content")
-								   ->valuestring));
+					cJSON* cnonce = cJSON_GetObjectItem(eventdata, "nonce");
+					int nonce = -1;
+					if (cnonce) {
+						nonce = cJSON_GetNumberValue(cnonce);
+					}
+					cJSON* cmsg = cJSON_GetObjectItem(eventdata, "message");
+					YampMessage* msg = ParseMessageObject(cmsg);
+					onYAMPReceiveIM(msg, nonce);
+					FreeMessageObject(msg);
 				} else if (strcmp(event->valuestring, "StatusUpdate") == 0) {
 					printf("Status update event\n");
 					cJSON* ustatus = cJSON_GetObjectItem(eventdata, "status");
@@ -540,6 +578,28 @@ void* YAMPRecvLoop(void* fd) {
 				} else if (strcmp(event->valuestring, "NewFriend") == 0) {
 					YampUser friend = ParseUserObject(eventdata);
 					onYAMPNewFriend(friend);
+				} else if (strcmp(event->valuestring, "Typing") == 0) {
+					cJSON* cuser = cJSON_GetObjectItem(eventdata, "user");
+					char* channel = cJSON_GetObjectItem(eventdata, "channel_id")
+										->valuestring;
+					YampUser user = ParseUserObject(cuser);
+					onYAMPTyping(user, channel);
+					YampUserFreeStrings(&user);
+				} else if (strcmp(event->valuestring, "MessageDeleted") == 0) {
+					onYAMPMessageDeleted(cJSON_GetObjectItem(eventdata, "message_id")
+										->valuestring);
+				} else if (strcmp(event->valuestring, "JoinChannel") == 0) {
+					char* channel_id = cJSON_GetObjectItem(eventdata, "channel_id")
+										->valuestring;
+					YampUser usr = ParseUserObject(cJSON_GetObjectItem(eventdata, "user"));
+					onYAMPChannelJoined(&usr,channel_id);
+					YampUserFreeStrings(&usr);
+				} else if (strcmp(event->valuestring, "LeftChannel") == 0) {
+					char* channel_id = cJSON_GetObjectItem(eventdata, "channel_id")
+										->valuestring;
+					YampUser usr = ParseUserObject(cJSON_GetObjectItem(eventdata, "user"));
+					onYAMPChannelLeave(&usr,channel_id);
+					YampUserFreeStrings(&usr);
 				}
 			}
 			cJSON_Delete(srvr);
@@ -613,7 +673,7 @@ static int YAMPSendRequest(SSL* fd, const char* reqid, const char* endpoint,
 	cJSON_AddStringToObject(root, "type", "request");
 	cJSON_AddStringToObject(root, "endpoint", endpoint);
 	cJSON_AddItemToObject(root, "payload", data);
-	char* finalPayload = cJSON_Print(root);
+	char* finalPayload = cJSON_PrintUnformatted(root);
 	TLSYAMPSend(fd, finalPayload, strlen(finalPayload));
 	cJSON_free(finalPayload);
 	cJSON_Delete(root);
@@ -645,11 +705,13 @@ int YAMPListConversations(SSL* fd) {
 	YAMPSendRequest(fd, "convlist", "ListConversations", cJSON_CreateObject());
 	return 0;
 }
-
-int YAMPSendIM(SSL* fd, char* where, char* content) {
+// the message type here is slimmed, only relevant fields are used, you dont have to fill most of the fields
+int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce) {
 	cJSON* data = cJSON_CreateObject();
 	cJSON_AddStringToObject(data, "channel", where);
-	cJSON_AddStringToObject(data, "content", content);
+	cJSON_AddStringToObject(data, "content", msg->content);
+	cJSON_AddStringToObject(data, "reply_id", msg->reply->id);
+	cJSON_AddNumberToObject(data, "nonce", nonce);
 	YAMPSendRequest(fd, where, "SendMessage", data);
 	return 0;
 }
@@ -769,6 +831,29 @@ int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem) {
 	YAMPSendRequest(fd, "CreateGC", "CreateGC", data);
 	return 1;
 }
-
+int YAMPJoinChannel(SSL* fd, char* channel) {
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddStringToObject(data, "channel", channel);
+	YAMPSendRequest(fd, "JoinChannel", "JoinChannel", data);
+	return 1;
+}
+int YAMPLeaveChannel(SSL* fd, char* channel) {
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddStringToObject(data, "channel", channel);
+	YAMPSendRequest(fd, "LeaveChannel", "LeaveChannel", data);
+	return 1;
+}
+int YAMPTyping(SSL* fd, char* channel) {
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddStringToObject(data, "channel", channel);
+	YAMPSendRequest(fd, "Typing", "Typing", data);
+	return 1;
+}
 char* YAMPGetHTTPBaseURI() { return YampHTTPAddress; }
 int YAMPQueryYAMPHTTP() { return YampHTTPAddress ? 1 : 0; }
+int YAMPDeleteMessage(SSL* fd, char* msg_id) {
+	cJSON* data = cJSON_CreateObject();
+	cJSON_AddStringToObject(data, "message_id", msg_id);
+	YAMPSendRequest(fd, "DeleteMessage", "DeleteMessage", data);
+	return 1;
+}
