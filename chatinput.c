@@ -10,8 +10,8 @@ int LastTypedAt = 0;
 int EntryKeyHandler(GtkEventControllerKey *controller, guint keyval,
                     guint keycode, GdkModifierType state,
                     gpointer user_data) {
-    if(time(NULL)-LastTypedAt>5 && currentChat){
-        YAMPTyping(mainsock, currentChat);
+    if(time(NULL)-LastTypedAt>5 && currentChannel){
+        YAMPTyping(mainsock, currentChannel->id);
     }
     EKeyPayload *dat = user_data;
     GtkTextView *tv = GTK_TEXT_VIEW(dat->EntryArea);
@@ -66,7 +66,7 @@ int EntryKeyHandler(GtkEventControllerKey *controller, guint keyval,
         GtkWidget* msgrow = PushUIMessage(chatscroll, chatarea, &msg,1);
         ScrollChatToBottom();
         int nonce = RegisterMessageSilhouette(msgrow);
-        YAMPSendMessage(mainsock, currentChat, &msg, nonce);
+        YAMPSendMessage(mainsock, currentChannel->id, &msg, nonce);
         gtk_text_buffer_set_text(buf, "", 0);
 
         g_free(content);

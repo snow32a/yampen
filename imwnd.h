@@ -3,7 +3,7 @@
 #include <cjson/cJSON.h>
 void StartMainIMWindow(const YampLoginData* dat);
 void CreateMainIMWindow(GtkApplication *app);
-extern char* currentChat;
+extern YampChannel* currentChannel;
 extern char* curUserID;
 extern GtkWidget* chatscroll;
 extern GtkWidget* chatarea;

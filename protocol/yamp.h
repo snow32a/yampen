@@ -21,6 +21,7 @@ typedef struct {
 					   // DEREFERENCE THAAT!
 	char* GuildName;   // Above but for guilds!
 	char* ChannelName; // same same, but differeeeent :sob:
+	char* GC_ID; // Do not dereference if its not a GC, because it will be NULL
 } chat;
 typedef struct {
 	char* status;
@@ -85,7 +86,7 @@ char* MakeDMChannel(const char* a, const char* b);
 char* MakeGCChannel(const char* a);
 const char* ParseGCChannel(const char* a);
 gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out);
-int YAMPGetMessageHistory(SSL* fd, char* where);
+int YAMPGetMessageHistory(SSL* fd, char* channel, int limit, char* before);
 int YAMPInsertSpace(SSL* fd, char* name, char* display_name, int type,
 					char* description, char* banner, char* pfp);
 int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
@@ -113,3 +114,7 @@ int YAMPDeleteMessage(SSL* fd, char* msg_id);
 YampUser YampUserDeepCopy(const YampUser* u);
 void YampUserFree(YampUser* u);
 YampUser* DupUserType(const YampUser* u);
+
+YampChannel YampChannelDup(const YampChannel* s);
+YampChannel* DupChannelObject(const YampChannel* s);
+void YampChannelFree(YampChannel* ch);

@@ -47,6 +47,7 @@ GtkWidget* suvbox;
 GtkWidget* chattitle;
 GtkWidget* typingindicator;
 GtkWidget* replyindicator;
+YampChannel* currentChannel = NULL;
 int isReplying = 0;
 char* ReplyingToMsg = NULL;
 
@@ -65,7 +66,6 @@ gboolean listmode = FALSE;
 char* curSpace = NULL;
 char* curSpaceDisplay = NULL;
 CURL* curl;
-char* currentChat;
 char* pfp_dir;
 
 #define TOPBAR_HEIGHT 40
@@ -251,9 +251,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	if (!row) {
 		return;
 	}
-	if (currentChat) {
-		YAMPLeaveChannel(mainsock, currentChat);
-		free(currentChat);
+	if (currentChannel) {
+		YAMPLeaveChannel(mainsock, currentChannel->id);
 	}
 	TypingClear();
 	GtkWidget* wdg;
@@ -261,15 +260,13 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		gtk_widget_unparent(wdg);
 	GtkWidget* child = gtk_widget_get_next_sibling(
 		gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
+	currentChannel = g_object_get_data(G_OBJECT(child), "channel");
 	int type = (int)g_object_get_data(G_OBJECT(child), "type");
 	LastTypedAt=0;
 	if (type == YAMP_DM) {
 		BuildUserProfile(
 			*GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
 		char* name = gtk_label_get_text(GTK_LABEL(child));
-		currentChat =
-			MakeDMChannel(curUserID, g_object_get_data(G_OBJECT(child), "id"));
-		gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
 		GtkWidget* titlewdg;
 		while ((titlewdg = gtk_widget_get_first_child(chattitle)) != NULL)
 			gtk_widget_unparent(titlewdg);
@@ -284,12 +281,10 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		GtkWidget* recipientname = gtk_label_new(dpyname ? dpyname : username);
 		gtk_box_append(GTK_BOX(titlebox), recipientname);
 		gtk_box_append(GTK_BOX(chattitle), titlebox);
-		YAMPGetMessageHistory(mainsock, currentChat);
-		YAMPJoinChannel(mainsock, currentChat);
+		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
+		YAMPJoinChannel(mainsock, currentChannel->id);
 	} else if (type == YAMP_GC) {
 		char* name = gtk_label_get_text(GTK_LABEL(child));
-		currentChat = MakeGCChannel(g_object_get_data(G_OBJECT(child), "id"));
-		gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
 		GtkWidget* titlewdg;
 		while ((titlewdg = gtk_widget_get_first_child(chattitle)) != NULL)
 			gtk_widget_unparent(titlewdg);
@@ -305,8 +300,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		if (members) {
 			BuildMemberList(members);
 		}
-		YAMPGetMessageHistory(mainsock, currentChat);
-		YAMPJoinChannel(mainsock, currentChat);
+		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
+		YAMPJoinChannel(mainsock, currentChannel->id);
 	}
 }
 void RecursiveDeselectChannelTree(GtkWidget* parentwdg,
@@ -329,23 +324,15 @@ void OnChannelSelected(GtkListBox* box, GtkListBoxRow* row,
 	if (!row) {
 		return;
 	}
-	if (currentChat) {
-		YAMPLeaveChannel(mainsock, currentChat);
-		free(currentChat);
+	if (currentChannel) {
+		YAMPLeaveChannel(mainsock, currentChannel->id);
 	}
 	TypingClear();
 	RecursiveDeselectChannelTree(ChannelSidebar, GTK_WIDGET(box));
-	char* channelname =
-		((YampChannel*)g_object_get_data(G_OBJECT(row), "channel"))->id;
-	char* loc = malloc(1 + strlen(curSpace) + strlen(channelname) + 2);
-	*loc = '^';
-	strcpy(loc + 1, curSpace);
-	*(loc + strlen(curSpace) + 1) = '#';
-	strcpy(loc + strlen(curSpace) + 2, channelname);
-	currentChat = loc;
-	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
-	YAMPJoinChannel(mainsock, currentChat);
-	YAMPGetMessageHistory(mainsock, loc);
+	currentChannel =
+		((YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
+	YAMPJoinChannel(mainsock, currentChannel->id);
+	YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
 }
 void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	gtk_widget_remove_css_class(dmsbutton, "active");
@@ -710,9 +697,7 @@ static void BuildChannelTree(GtkWidget* parent_box, YampChannel* channels,
 				gtk_box_append(GTK_BOX(parent_box), current_listbox);
 			}
 
-			YampChannel* chdup = malloc(sizeof(YampChannel));
-			*chdup = *ch;
-			chdup->name = strdup(chdup->name);
+			YampChannel* chdup = DupChannelObject(ch);
 			char* dispname = ch->name;
 			GtkWidget* lbr = gtk_list_box_row_new();
 			GtkWidget* label = gtk_label_new(dispname);
@@ -939,6 +924,8 @@ int InsertConvIntoList(YampChannel conv) {
 									   GTK_STYLE_PROVIDER(provider),
 									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 		g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
+		g_object_set_data(G_OBJECT(LBRowLabel), "channel", DupChannelObject(&conv));
+		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
 		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
 		gtk_box_append(GTK_BOX(ItemBox), Pfp);
 		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
@@ -946,10 +933,8 @@ int InsertConvIntoList(YampChannel conv) {
 		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
 		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
 	} else if (conv.type == YAMP_GC) {
-		// Currently the protocol doesnt fucking carry the name
-		// when we do so the joined name will just be used foor null named ones
 		YampUser* members = conv.people;
-		char* dispname = JoinUsernames(members, conv.npeople);
+		char* dispname = conv.name ? conv.name : JoinUsernames(members, conv.npeople);
 		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 		GtkWidget* LBRow = gtk_list_box_row_new();
 		GtkWidget* LBRowLabel = gtk_label_new(dispname);
@@ -966,13 +951,14 @@ int InsertConvIntoList(YampChannel conv) {
 		gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
 									   GTK_STYLE_PROVIDER(provider),
 									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
+		g_object_set_data(G_OBJECT(LBRowLabel), "channel", DupChannelObject(&conv));
 		g_object_set_data(G_OBJECT(LBRowLabel), "id",
 						  strdup(ParseGCChannel(conv.id)));
 		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
 		g_object_set_data_full(G_OBJECT(LBRowLabel), "members",
 							   MemberSetCopy(conv.people, conv.npeople),
 							   MemberSetFree);
+		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
 		gtk_box_append(GTK_BOX(ItemBox), Pfp);
 		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
 		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
@@ -1612,7 +1598,7 @@ typedef struct {
 
 static gboolean MainThreadTypingCB(gpointer data) {
 	TypingPayload* p = data;
-	if (currentChat && strcmp(currentChat, p->channel) == 0) {
+	if (currentChannel && strcmp(currentChannel->id, p->channel) == 0) {
 		TypingAdd(p->id, p->name);
 	}
 	free(p->id);
@@ -1674,7 +1660,7 @@ typedef struct {
 static gboolean receive_im_main_thread(gpointer user_data) {
 	IMReceivePayload* payload = user_data;
 
-	if (currentChat && strcmp(currentChat, payload->msg->channel) == 0) {
+	if (currentChannel && strcmp(currentChannel->id, payload->msg->channel) == 0) {
 		char* id;
 		YampUser* usr = &payload->msg->author;
 		id = usr->id;
@@ -1708,6 +1694,55 @@ void onYAMPReceiveIM(YampMessage* msg, int nonce) {
 	payload->nonce = nonce;
 	g_idle_add(receive_im_main_thread, payload);
 }
+typedef struct{
+	YampMessage** msgs;
+	int nmsgs;
+	int hasmore;
+} HistoryLoadPayload;
+gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload){
+	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
+	if(payload->hasmore){
+		PushChannelBanner(chatarea,currentChannel);
+	}
+	for(int i = 0; i<payload->nmsgs; i++){
+		char* id;
+		YampUser* usr = &payload->msgs[i]->author;
+		id = usr->id;
+		if (!usr) {
+			return G_SOURCE_REMOVE;
+		}
+		char* dispname = usr->displayname ? usr->displayname : usr->username;
+		PushUIMessage(chatscroll, chatarea,payload->msgs[i], 0);
+	}
+	ScrollChatToBottom();
+	for (int i = 0; i < payload->nmsgs; i++)
+		FreeMessageObject(payload->msgs[i]);
+	free(payload->msgs);
+	free(payload);
+
+	return G_SOURCE_REMOVE;
+}
+void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs, int hasmore) {
+	HistoryLoadPayload* payload = calloc(1, sizeof(HistoryLoadPayload));
+	if (!payload)
+		return;
+
+	payload->msgs = calloc(nmsgs > 0 ? nmsgs : 1, sizeof(YampMessage*));
+	if (!payload->msgs) {
+		free(payload);
+		return;
+	}
+
+	for (int i = 0; i < nmsgs; i++) {
+		YampMessage* copy = DupMessageObject(msgs[i]);
+		if (!copy)
+			continue;
+		payload->msgs[payload->nmsgs++] = copy;
+	}
+	payload->hasmore = hasmore;
+
+	g_idle_add(G_SOURCE_FUNC(HistoryLoadedMainThread), payload);
+}
 gboolean MessageDeleted_MainThread(char* message_id){ // well i just casted the func below rather than passing a GPointer in the arguments
 	DeleteUIMessage(chatscroll, chatarea, message_id);
 	ScrollChatToBottom();
@@ -1722,8 +1757,8 @@ typedef struct{
 	char* channel_id;
 } MainThreadCJLPayload;
 gboolean ChannelJoined_MainThread(MainThreadCJLPayload* payload) {
-	if (payload->channel_id && payload->user && currentChat &&
-		strcmp(currentChat, payload->channel_id) == 0) {
+	if (payload->channel_id && payload->user && currentChannel &&
+		strcmp(currentChannel->id, payload->channel_id) == 0) {
 		const char* name = payload->user->displayname
 							   ? payload->user->displayname
 							   : payload->user->username;
@@ -1751,8 +1786,8 @@ gboolean ChannelJoined_MainThread(MainThreadCJLPayload* payload) {
 	return G_SOURCE_REMOVE;
 }
 gboolean ChannelLeft_MainThread(MainThreadCJLPayload* payload) {
-	if (payload->channel_id && payload->user && currentChat &&
-		strcmp(currentChat, payload->channel_id) == 0) {
+	if (payload->channel_id && payload->user && currentChannel &&
+		strcmp(currentChannel->id, payload->channel_id) == 0) {
 		const char* name = payload->user->displayname
 							   ? payload->user->displayname
 							   : payload->user->username;

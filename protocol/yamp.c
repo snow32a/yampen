@@ -43,6 +43,7 @@ extern void onYAMPTyping(YampUser user, char* channelid);
 extern void onYAMPMessageDeleted(char* message_id);
 extern void onYAMPChannelJoined(YampUser* user, char* channel_id);
 extern void onYAMPChannelLeave(YampUser* user, char* channel_id);
+extern void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs, int hasmore);
 
 static char* safe_strdup(const char* s) { return s ? strdup(s) : NULL; }
 static void CopyID(char* dst, size_t cap, const char* src) {
@@ -165,49 +166,53 @@ char* MakeGCChannel(const char* a) {
 }
 const char* ParseGCChannel(const char* a) { return a + 1; }
 
-//////////////////////////////////////////
-///    YAMP'S WHERE PARAMETER STYLE    ///
-///  GUILDS:              DMS:         ///
-/// ^guildName#channel    aguy-boi     ///
-//////////////////////////////////////////
-gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out) {
-	char* dupedwhere = strdup(where);
-	char* safewhere = strdup(where);
+////////////////////////////////////////////////
+///      YAMP'S WHERE PARAMETER STYLE        ///
+/// SPACES:     DMs:                GCs:     ///
+/// #channel    userID1-userID2     &GC      ///
+////////////////////////////////////////////////
+int YAMPProcessWhere(char* where, char* curUserID, chat* out) {
 	chat retval = {0};
-	if (*where == '^') {
-		// GUILD PROBABLY
-		char* hashtag = strchr(safewhere, '#');
-		if (!hashtag) {
-			return FALSE;
-		}
-		*hashtag = '\0';
-		retval.GuildName = safewhere + 1;
-		retval.ChannelName = hashtag + 1;
+	if (*where == '&') {
+		// Group chat
+		retval.GC_ID = strdup(where + 1);
 		retval.OtherGuy = NULL;
-		retval.type = YAMP_SPACE_TEXT;
-		retval.where = dupedwhere;
+		retval.type = YAMP_GC;
+		retval.where = strdup(where);
 		*out = retval;
 		return TRUE;
 	} else {
 		// Could be a damn DM?
-		char* minus = strchr(safewhere, '|');
+		char* firstUsr = strdup(where);
+		char* minus = strchr(firstUsr, '|');
 		if (!minus) {
-			return FALSE; // nah it wasnt anything LMFAO
+			// This means it's a space channel!
+			free(firstUsr);
+			retval.GuildName = NULL; // long deprecated sorry
+			retval.ChannelName = strdup(where);
+			retval.OtherGuy = NULL;
+			retval.type = YAMP_SPACE_TEXT;
+			retval.where = strdup(where);
+			*out = retval;
+			return TRUE;
 		}
 		*minus = '\0';
 		retval.ChannelName = NULL;
 		retval.type = YAMP_DM;
-		retval.where = dupedwhere;
-		if (strcmp(minus + 1, curUsername) == 0) {
-			retval.OtherGuy = safewhere;
-		} else {
+		retval.where = strdup(where);
+		if (strcmp(firstUsr, curUserID) == 0) {
 			retval.OtherGuy = minus + 1;
+		} else if (strcmp(minus + 1, curUserID) == 0) {
+			retval.OtherGuy = firstUsr;
+		} else {
+			return FALSE; // who the FUCK are you
 		}
 		retval.GuildName = NULL;
 		*out = retval;
 		return TRUE;
 	}
 }
+
 int TLSYAMPSend(SSL* fd, void* payload, uint32_t size) {
 	uint32_t NlSize = htonl(size);
 	SSL_write(fd, &NlSize, 4);
@@ -307,6 +312,36 @@ YampChannel RecursiveParseChannel(cJSON* raw) {
 
 	return ret;
 }
+
+YampChannel YampChannelDup(const YampChannel* s) {
+	YampChannel c = *s;
+
+	c.name = safe_strdup(s->name);
+
+	if (s->children && s->nchildren > 0) {
+		c.children = malloc(sizeof(YampChannel) * s->nchildren);
+		for (int i = 0; i < s->nchildren; i++)
+			c.children[i] = YampChannelDup(&s->children[i]);
+	} else {
+		c.children = NULL;
+		c.nchildren = 0;
+	}
+
+	if (s->people && s->npeople > 0) {
+		c.people = YampUserArrayDeepCopy(s->people, s->npeople);
+	} else {
+		c.people = NULL;
+		c.npeople = 0;
+	}
+
+	return c;
+}
+
+YampChannel* DupChannelObject(const YampChannel* s) {
+	YampChannel* c = malloc(sizeof(YampChannel));
+	*c = YampChannelDup(s);
+	return c;
+}
 void YampChannelFree(YampChannel* ch) {
 	if (!ch)
 		return;
@@ -315,10 +350,13 @@ void YampChannelFree(YampChannel* ch) {
 
 	for (int i = 0; i < ch->nchildren; i++)
 		YampChannelFree(&ch->children[i]);
-
 	free(ch->children);
 	ch->children = NULL;
 	ch->nchildren = 0;
+
+	YampUserArrayFree(ch->people, ch->npeople);
+	ch->people = NULL;
+	ch->npeople = 0;
 }
 cJSON* CreateUserObject(YampUser user) {
 	cJSON* returnObj = cJSON_CreateObject();
@@ -512,11 +550,14 @@ void* YAMPRecvLoop(void* fd) {
 				} else if (strcmp(reqid->valuestring, "GetMessageHistory") ==
 						   0) {
 					cJSON* msgarr = cJSON_GetObjectItem(response, "messages");
+					YampMessage** msgs = malloc(sizeof(YampMessage**)*cJSON_GetArraySize(msgarr));
 					for (int i = 0; i < cJSON_GetArraySize(msgarr); i++) {
 						cJSON* cmsg = cJSON_GetArrayItem(msgarr, i);
-						YampMessage* msg = ParseMessageObject(cmsg);
-						onYAMPReceiveIM(msg, -1);
-						FreeMessageObject(msg);
+						msgs[i] = ParseMessageObject(cmsg);
+					}
+					onYAMPMessageHistoryLoaded(msgs, cJSON_GetArraySize(msgarr), cJSON_GetObjectItem(response, "has_more")->valueint);
+					for (int i = 0; i < cJSON_GetArraySize(msgarr); i++) {
+						FreeMessageObject(msgs[i]);
 					}
 				} else if (strcmp(reqid->valuestring, "SendFriendReq") == 0) {
 					onYAMPFriendReqSent(success);
@@ -725,9 +766,13 @@ int YAMPListSpaceChannels(SSL* fd, char* space) {
 	return 1;
 }
 
-int YAMPGetMessageHistory(SSL* fd, char* where) {
+int YAMPGetMessageHistory(SSL* fd, char* channel, int limit, char* before) {
 	cJSON* data = cJSON_CreateObject();
-	cJSON_AddStringToObject(data, "channel", where);
+	cJSON_AddStringToObject(data, "channel", channel);
+	cJSON_AddNumberToObject(data, "limit", limit);
+	if(before){
+		cJSON_AddStringToObject(data, "before", before);
+	}
 	YAMPSendRequest(fd, "GetMessageHistory", "GetMessageHistory", data);
 	return 1;
 }

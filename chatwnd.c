@@ -94,6 +94,63 @@ static void MdNewLine(MdCtx* ctx) {
 	gtk_widget_set_halign(ctx->line, GTK_ALIGN_START);
 	gtk_box_append(GTK_BOX(ctx->root), ctx->line);
 }
+void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel){
+    char* title = NULL;
+    char* body  = NULL;
+
+    if(channel->type >= YAMP_SPACE_TEXT){
+        title = g_strdup_printf("Welcome to #%s", channel->name);
+        body  = g_strdup_printf("This is the start of #%s.", channel->name);
+    } else if(channel->type == YAMP_GC){
+        if(channel->name){
+            title = g_strdup_printf("Welcome to %s!", channel->name);
+        } else {
+            title = g_strdup("Welcome to the group!");
+        }
+        body = g_strdup("Have a nice chat w/ your friends!");
+    } else if(channel->type == YAMP_DM){
+        title = g_strdup("Welcome!");
+        if(channel->name){
+            body = g_strdup_printf("This is the start of your conversation with %s!", channel->name);
+        } else {
+            body = g_strdup("Have a nice chat!");
+        }
+    } else {
+        return;
+    }
+
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_halign(box, GTK_ALIGN_FILL);
+    gtk_widget_set_margin_top(box, 16);
+    gtk_widget_set_margin_bottom(box, 16);
+    gtk_widget_set_margin_start(box, 16);
+    gtk_widget_set_margin_end(box, 16);
+
+    GtkWidget* header = gtk_label_new(title);
+    gtk_widget_add_css_class(header, "h1");
+    gtk_widget_set_halign(header, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(header), 0.0);
+    gtk_label_set_wrap(GTK_LABEL(header), TRUE);
+
+    GtkWidget* text = gtk_label_new(body);
+    gtk_widget_add_css_class(text, "banner-text");
+    gtk_widget_set_halign(text, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(text), 0.0);
+    gtk_label_set_wrap(GTK_LABEL(text), TRUE);
+
+    gtk_box_append(GTK_BOX(box), header);
+    gtk_box_append(GTK_BOX(box), text);
+
+    GtkWidget* row = gtk_list_box_row_new();
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
+    gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(row), FALSE);
+    gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+
+    gtk_list_box_append(GTK_LIST_BOX(chatarea), row);
+
+    g_free(title);
+    g_free(body);
+}
 void FillContentBox(MdCtx* ctx, MarkdownElement* tree, int inheritedStyle) {
 	for (int i = 0; i < tree->nChildren; i++) {
 		MarkdownElement* child = tree->children[i];
