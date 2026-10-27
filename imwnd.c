@@ -501,7 +501,7 @@ void ChannelCreateBtnCallback(GtkButton* btn, gpointer dat) {
 	YAMPCreateChannel(mainsock, createctx->menuctx.space,
 					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
 						  GTK_ENTRY(createctx->nameentry))),
-					  -1, 0, createctx->menuctx.category, NULL);
+					  -1, 40, createctx->menuctx.category, NULL);
 	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
 	free(dat);
 }
@@ -510,7 +510,7 @@ void CategoryCreateBtnCallback(GtkButton* btn, gpointer dat) {
 	YAMPCreateChannel(mainsock, createctx->menuctx.space,
 					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
 						  GTK_ENTRY(createctx->nameentry))),
-					  -1, 1, createctx->menuctx.category, NULL);
+					  -1, 41, createctx->menuctx.category, NULL);
 	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
 	free(dat);
 }
@@ -1736,7 +1736,7 @@ typedef struct{
 } HistoryLoadPayload;
 gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload){
 	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
-	if(payload->hasmore){
+	if(!payload->hasmore){
 		PushChannelBanner(chatarea,currentChannel);
 	}
 	for(int i = 0; i<payload->nmsgs; i++){

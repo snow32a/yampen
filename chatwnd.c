@@ -110,11 +110,13 @@ void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel){
         body = g_strdup("Have a nice chat w/ your friends!");
     } else if(channel->type == YAMP_DM){
         title = g_strdup("Welcome!");
-        if(channel->name){
+		char* other_guy;
+		if(strcmp(curUserID,channel->people[0].id)==0){
+			other_guy=channel->people[1].displayname ? channel->people[1].displayname : channel->people[1].username;
+		} else{
+			other_guy=channel->people[0].displayname ? channel->people[0].displayname : channel->people[0].username;
+		}
             body = g_strdup_printf("This is the start of your conversation with %s!", channel->name);
-        } else {
-            body = g_strdup("Have a nice chat!");
-        }
     } else {
         return;
     }
