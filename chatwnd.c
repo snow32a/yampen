@@ -284,7 +284,7 @@ void ReplyCallback(GSimpleAction* action, GVariant* parameter,
 }
 void DeleteCallback(GSimpleAction* action, GVariant* parameter,
 					gpointer user_data) {
-	YAMPDeleteMessage(mainsock, g_object_get_data(user_data, "msgid"));
+	YAMPDeleteMessage(mainsock, g_object_get_data(user_data, "msgid"), NULL);
 }
 void JumpToReplyTarget(GtkGestureClick* g, int n_press, double x, double y,
 					   gpointer user_data) {

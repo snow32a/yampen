@@ -192,7 +192,8 @@ void cb_finish_space_insert(GtkButton* btn, gpointer dat) {
 	YAMPInsertSpace(mainsock, name_arg, display_name_arg,
 					wiz->is_community, description_arg,
 					NULL, /* banner */
-					NULL  /* pfp */
+					NULL,  /* pfp */
+					NULL /* callback */
 	);
 
 	g_free(name_arg);

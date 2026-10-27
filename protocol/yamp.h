@@ -74,47 +74,70 @@ typedef struct {
     YampUser    *outfq;         int outfqcount;
 } YampLoginData;
 #include <openssl/ssl.h>
+// connection / addressing
 int YAMPConnect(const char* server, int* fd_out, SSL** socket_out);
 int SplitAddress(char* address, char** username, char** server);
-int YAMPLogin(SSL* fd, char* username, char* password);
-int YAMPRegister(SSL* fd, char* username, char* password);
-int YAMPListBuddies(SSL* fd);
-int YAMPListConversations(SSL* fd);
-int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce);
-int YAMPListSpaceChannels(SSL* fd, char* space);
+
+// auth
+int YAMPAuth(SSL* fd, char* token, void* callback);
+int YAMPLogin(SSL* fd, char* email, char* password, char* device,
+			  int devicetype, void* callback);
+int YAMPRegister(SSL* fd, char* email, char* username, char* password,
+				 char* device, int devicetype, void* callback);
+
+// friends / profile
+int YAMPListBuddies(SSL* fd, void* callback);
+int YAMPSendFriendReq(SSL* fd, char* to, void* callback);
+int YAMPAcceptFriendReq(SSL* fd, char* user, void* callback);
+int YAMPDenyFriendReq(SSL* fd, char* user, void* callback);
+int YAMPUpdateUserProfile(SSL* fd, YampUser usr, void* callback);
+
+// conversations / DMs / group chats
+int YAMPListConversations(SSL* fd, void* callback);
+int YAMPStartDM(SSL* fd, char* targetusr, void* callback);
+int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem, void* callback);
 char* MakeDMChannel(const char* a, const char* b);
 char* MakeGCChannel(const char* a);
 const char* ParseGCChannel(const char* a);
 gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out);
-int YAMPGetMessageHistory(SSL* fd, char* channel, int limit, char* before);
+
+// messages
+int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce,
+					void* callback);
+int YAMPGetMessageHistory(SSL* fd, char* channel, int limit, char* before,
+						  void* callback);
+int YAMPDeleteMessage(SSL* fd, char* msg_id, void* callback);
+int YAMPTyping(SSL* fd, char* channel, void* callback);
+
+// spaces / channels
 int YAMPInsertSpace(SSL* fd, char* name, char* display_name, int type,
-					char* description, char* banner, char* pfp);
+					char* description, char* banner, char* pfp,
+					void* callback);
+int YAMPListSpaceChannels(SSL* fd, char* space, void* callback);
 int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
-					  char* parent);
-int YAMPSendFriendReq(SSL* fd, char* to);
-int YAMPAcceptFriendReq(SSL* fd, char* user);
-int YAMPDenyFriendReq(SSL* fd, char* user);
-int YAMPUpdateUserProfile(SSL* fd, YampUser usr);
+					  char* parent, void* callback);
+int YAMPJoinChannel(SSL* fd, char* channel, void* callback);
+int YAMPLeaveChannel(SSL* fd, char* channel, void* callback);
+
+// yamp-http
 extern char* YampHTTPAddress;
 char* YAMPGetHTTPBaseURI();
 int YAMPQueryYAMPHTTP();
-int YAMPStartDM(SSL* fd, char* targetusr);
-int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem);
 
+// status helpers
 void YampStatusDupStrings(status* s);
 void YampStatusFreeStrings(status* s);
 
-int YAMPJoinChannel(SSL* fd, char* channel);
-int YAMPLeaveChannel(SSL* fd, char* channel);
-int YAMPTyping(SSL* fd, char* channel);
-
+// message object helpers
 YampMessage* DupMessageObject(YampMessage* msg);
 void FreeMessageObject(YampMessage* msg);
-int YAMPDeleteMessage(SSL* fd, char* msg_id);
+
+// user object helpers
 YampUser YampUserDeepCopy(const YampUser* u);
 void YampUserFree(YampUser* u);
 YampUser* DupUserType(const YampUser* u);
 
+// channel object helpers
 YampChannel YampChannelDup(const YampChannel* s);
 YampChannel* DupChannelObject(const YampChannel* s);
 void YampChannelFree(YampChannel* ch);

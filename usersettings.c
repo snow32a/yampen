@@ -10,7 +10,7 @@ void ProfilePageApply(GtkWidget* btn, void* userdat) {
 	YampUser newprofile = {0};
 	newprofile.displayname = gtk_entry_buffer_get_text(
 		gtk_entry_get_buffer(GTK_ENTRY(payload->dpyname)));
-	YAMPUpdateUserProfile(mainsock, newprofile);
+	YAMPUpdateUserProfile(mainsock, newprofile, NULL);
 }
 void BuildProfilePage(GtkWidget* page) {
 	GtkWidget* contentbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);

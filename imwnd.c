@@ -25,6 +25,40 @@
 #include "emoji_map.h"
 #include "chatinput.h"
 
+
+void onYAMPDisconnected(void);
+
+/* Spaces */
+void onYAMPSpacesFetched(YampSpace* spaces, int nspaces);
+void onYAMPNewSpace(YampSpace space);
+
+/* Channels */
+void onYAMPChannelsFetched(YampChannel* channels, int nchannels);
+void onYAMPChannelsUpdated(YampChannel* channels, int n, char* space);
+void onYAMPChannelJoined(YampUser* user, char* channel_id);
+void onYAMPChannelLeave(YampUser* user, char* channel_id);
+
+/* Messages */
+void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs, int hasmore);
+void onYAMPReceiveIM(YampMessage* msg, int nonce);
+void onYAMPMessageDeleted(char* message_id);
+
+/* Status / typing */
+void onYAMPStatusUpdate(char* id, status stat);
+void onYAMPTyping(YampUser usr, char* channel);
+
+/* User details */
+void onYAMPUserDetailsFetched(cJSON* Details);
+
+/* Friends / conversations */
+void onYAMPFriendRequestReceived(char* username);
+void onYAMPFriendReqSent(int success);
+void onYAMPFriendReqResolved(char* username, int success);
+void onYAMPNewFriend(YampUser friend);
+void onYAMPNewConversation(YampChannel conv);
+void onYAMPFriendsListed(YampUser* friends, int nfriends);
+
+
 char* curUserID;
 GQueue MessageStack = G_QUEUE_INIT;
 GtkWidget* main_window;
@@ -47,6 +81,7 @@ GtkWidget* suvbox;
 GtkWidget* chattitle;
 GtkWidget* typingindicator;
 GtkWidget* replyindicator;
+
 YampChannel* currentChannel = NULL;
 int isReplying = 0;
 char* ReplyingToMsg = NULL;
@@ -252,7 +287,7 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		return;
 	}
 	if (currentChannel) {
-		YAMPLeaveChannel(mainsock, currentChannel->id);
+		YAMPLeaveChannel(mainsock, currentChannel->id, NULL);
 	}
 	TypingClear();
 	GtkWidget* wdg;
@@ -281,8 +316,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		GtkWidget* recipientname = gtk_label_new(dpyname ? dpyname : username);
 		gtk_box_append(GTK_BOX(titlebox), recipientname);
 		gtk_box_append(GTK_BOX(chattitle), titlebox);
-		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
-		YAMPJoinChannel(mainsock, currentChannel->id);
+		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
+		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	} else if (type == YAMP_GC) {
 		char* name = gtk_label_get_text(GTK_LABEL(child));
 		GtkWidget* titlewdg;
@@ -300,8 +335,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		if (members) {
 			BuildMemberList(members);
 		}
-		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
-		YAMPJoinChannel(mainsock, currentChannel->id);
+		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
+		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	}
 }
 void RecursiveDeselectChannelTree(GtkWidget* parentwdg,
@@ -325,14 +360,14 @@ void OnChannelSelected(GtkListBox* box, GtkListBoxRow* row,
 		return;
 	}
 	if (currentChannel) {
-		YAMPLeaveChannel(mainsock, currentChannel->id);
+		YAMPLeaveChannel(mainsock, currentChannel->id, NULL);
 	}
 	TypingClear();
 	RecursiveDeselectChannelTree(ChannelSidebar, GTK_WIDGET(box));
 	currentChannel =
 		((YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
-	YAMPJoinChannel(mainsock, currentChannel->id);
-	YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL);
+	YAMPJoinChannel(mainsock, currentChannel->id, NULL);
+	YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
 }
 void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	gtk_widget_remove_css_class(dmsbutton, "active");
@@ -343,7 +378,7 @@ void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	YampSpace* space = user_data;
 	curSpace = space->id;
 
-	YAMPListSpaceChannels(mainsock, curSpace);
+	YAMPListSpaceChannels(mainsock, curSpace,onYAMPChannelsFetched);
 }
 int InsertSpace(YampSpace space) {
 	printf("%s\n", space.id);
@@ -466,7 +501,7 @@ void ChannelCreateBtnCallback(GtkButton* btn, gpointer dat) {
 	YAMPCreateChannel(mainsock, createctx->menuctx.space,
 					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
 						  GTK_ENTRY(createctx->nameentry))),
-					  -1, 0, createctx->menuctx.category);
+					  -1, 0, createctx->menuctx.category, NULL);
 	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
 	free(dat);
 }
@@ -475,7 +510,7 @@ void CategoryCreateBtnCallback(GtkButton* btn, gpointer dat) {
 	YAMPCreateChannel(mainsock, createctx->menuctx.space,
 					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
 						  GTK_ENTRY(createctx->nameentry))),
-					  -1, 1, createctx->menuctx.category);
+					  -1, 1, createctx->menuctx.category, NULL);
 	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
 	free(dat);
 }
@@ -972,7 +1007,7 @@ void OnGCInitMembersSelected(YampUser* users, int nusers) {
 	for (int i = 0; i < nusers; i++) {
 		initmembers[i] = users[i].id;
 	}
-	YAMPCreateGC(mainsock, initmembers, nusers);
+	YAMPCreateGC(mainsock, initmembers, nusers, NULL);
 	free(initmembers);
 }
 void OnCreateGCBtnClicked(GtkButton* btn, gpointer user_data) {
@@ -1033,7 +1068,7 @@ char FetchedUserProfile = false;
 GtkWidget* UsernameLabel;
 void SendFQBtnCB(GtkButton* btn, void* data) {
 	YAMPSendFriendReq(mainsock, gtk_entry_buffer_get_text(
-									gtk_entry_get_buffer(GTK_ENTRY(data))));
+									gtk_entry_get_buffer(GTK_ENTRY(data))),NULL);
 	gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(data)), "", 0);
 }
 void SetupFriendsPane(GtkWidget* friendspane) {
@@ -1074,14 +1109,14 @@ static void FQPayloadFree(fqnotifpayload* p) {
 
 void AcceptFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
-	YAMPAcceptFriendReq(mainsock, payload->username);
-	YAMPStartDM(mainsock, payload->username);
+	YAMPAcceptFriendReq(mainsock, payload->username,NULL);
+	YAMPStartDM(mainsock, payload->username,NULL);
 	gtk_widget_unparent(payload->notif);
 	FQPayloadFree(payload);
 }
 void DenyFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
-	YAMPDenyFriendReq(mainsock, payload->username);
+	YAMPDenyFriendReq(mainsock, payload->username, NULL);
 	gtk_widget_unparent(payload->notif);
 	FQPayloadFree(payload);
 }
