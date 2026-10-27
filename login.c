@@ -625,7 +625,6 @@ EditableCombo* editable_combo_new(const char* const* items) {
 }
 const char* const initial_srvs[] = {
 	"yamp.root.sx",
-	"dustbox.urani.de",
 	NULL,
 };
 GtkWidget* pagestack;
