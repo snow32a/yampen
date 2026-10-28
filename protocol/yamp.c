@@ -34,6 +34,7 @@ typedef void (*YampFriendReqResolvedCb)(char* username, int success);
 
 extern void onYAMPNewSpace(YampSpace spaces);
 extern void onYAMPNewFriend(YampUser friend);
+extern void onYAMPNewConversation(YampChannel* conversation);
 extern void onYAMPChannelsUpdated(YampChannel* channels, int n, char* space);
 
 extern void onYAMPDisconnected();
@@ -651,6 +652,9 @@ void* YAMPRecvLoop(void* fd) {
 				} else if (strcmp(event->valuestring, "NewFriend") == 0) {
 					YampUser friend = ParseUserObject(eventdata);
 					onYAMPNewFriend(friend);
+				} else if (strcmp(event->valuestring, "NewConversation") == 0) {
+					YampChannel friend = RecursiveParseChannel(eventdata);
+					onYAMPNewConversation(&friend);
 				} else if (strcmp(event->valuestring, "Typing") == 0) {
 					cJSON* cuser = cJSON_GetObjectItem(eventdata, "user");
 					char* channel = cJSON_GetObjectItem(eventdata, "channel_id")

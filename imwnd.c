@@ -55,7 +55,7 @@ void onYAMPFriendRequestReceived(char* username);
 void onYAMPFriendReqSent(int success);
 void onYAMPFriendReqResolved(char* username, int success);
 void onYAMPNewFriend(YampUser friend);
-void onYAMPNewConversation(YampChannel conv);
+void onYAMPNewConversation(YampChannel* conv);
 void onYAMPFriendsListed(YampUser* friends, int nfriends);
 
 
@@ -1614,10 +1614,14 @@ void onYAMPNewFriend(YampUser friend) {
 	*heapfriend = friend;
 	g_idle_add(MainThreadNewFriend, heapfriend);
 }
-void onYAMPNewConversation(YampChannel conv) {
-	YampChannel* heapconv = malloc(sizeof(YampChannel));
-	*heapconv = conv;
-	g_idle_add(MainThreadNewFriend, heapconv);
+gboolean MainThreadNewConversation(YampChannel* heapconv){
+	InsertConvIntoList(*heapconv);
+	free(heapconv);
+	return G_SOURCE_REMOVE;
+}
+void onYAMPNewConversation(YampChannel* conv) {
+	YampChannel* heapconv = DupChannelObject(conv);
+	g_idle_add(G_SOURCE_FUNC(MainThreadNewConversation), heapconv);
 }
 void onYAMPFriendsListed(YampUser* friends, int nfriends) {
 	MainThreadFriendPayload* payload = malloc(sizeof(MainThreadFriendPayload));
