@@ -123,6 +123,8 @@ int YAMPLeaveChannel(SSL* fd, char* channel, void* callback);
 extern char* YampHTTPAddress;
 char* YAMPGetHTTPBaseURI();
 int YAMPQueryYAMPHTTP();
+int YAMPUploadFile(SSL* fd, char* MIME, unsigned char* file, int len,
+				   void* callback);
 
 // status helpers
 void YampStatusDupStrings(status* s);
@@ -141,3 +143,6 @@ YampUser* DupUserType(const YampUser* u);
 YampChannel YampChannelDup(const YampChannel* s);
 YampChannel* DupChannelObject(const YampChannel* s);
 void YampChannelFree(YampChannel* ch);
+
+
+void YAMP_Init(); // SOLELY required due to curl

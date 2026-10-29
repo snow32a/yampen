@@ -20,6 +20,7 @@ typedef SOCKET socket_fd;
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <curl/curl.h>
 #endif
 #define YAMP_PORT 5225
 
@@ -28,9 +29,11 @@ typedef void (*YampLoginResultCb)(char* token, int success);
 typedef void (*YampRegisterResultCb)(char* token, int success);
 typedef void (*YampAuthCb)(YampLoginData* payload);
 typedef void (*YampChannelsFetchedCb)(YampChannel* channels, int n);
-typedef void (*YampMessageHistoryCb)(YampMessage** msgs, int nmsgs, int hasmore);
+typedef void (*YampMessageHistoryCb)(YampMessage** msgs, int nmsgs,
+									 int hasmore);
 typedef void (*YampFriendReqSentCb)(int success);
 typedef void (*YampFriendReqResolvedCb)(char* username, int success);
+typedef void (*YampFileUploaded)(char* filename, int success);
 
 extern void onYAMPNewSpace(YampSpace spaces);
 extern void onYAMPNewFriend(YampUser friend);
@@ -49,6 +52,13 @@ extern void onYAMPChannelJoined(YampUser* user, char* channel_id);
 extern void onYAMPChannelLeave(YampUser* user, char* channel_id);
 extern void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs,
 									   int hasmore);
+
+typedef struct {
+	char* mime;
+	unsigned char* file;
+	int len;
+} UploadFilePayload;
+
 typedef struct CallbackStackEntry {
 	void(*callback);
 	int reqid;
@@ -442,11 +452,23 @@ YampMessage* DupMessageObject(YampMessage* msg) {
 	return heapmsg;
 }
 
+typedef struct {
+	unsigned char* buf;
+	int len;
+} curl_buffer;
+size_t curl_buffer_write(char* ptr, size_t size, size_t nmemb, void* userdata) {
+	curl_buffer* buf = userdata;
+	buf->buf = realloc(buf->buf, buf->len + nmemb);
+	memcpy(buf->buf + buf->len, ptr, nmemb);
+	buf->len += nmemb;
+	return nmemb;
+}
 void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 					int success) {
 	cJSON* response = cJSON_GetObjectItem(srvr, "response");
 	const char* ep = callback_entry->endpoint;
 	void* cb = callback_entry->callback;
+	void* dat = callback_entry->data;
 
 	if (strcmp(ep, "ListFriends") == 0) {
 		if (!cb)
@@ -484,7 +506,8 @@ void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 		}
 		cJSON* http = cJSON_GetObjectItem(response, "yamp-http");
 		free(YampHTTPAddress);
-		YampHTTPAddress = cJSON_IsString(http) ? strdup(http->valuestring) : NULL;
+		YampHTTPAddress =
+			cJSON_IsString(http) ? strdup(http->valuestring) : NULL;
 		if (!cb)
 			return;
 
@@ -494,22 +517,34 @@ void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 		cJSON* rawconvs = cJSON_GetObjectItem(response, "conversations");
 		cJSON* rawfriends = cJSON_GetObjectItem(response, "friends");
 
-		int nincfq = cJSON_IsArray(raw_incoming_fq) ? cJSON_GetArraySize(raw_incoming_fq) : 0;
-		int noutfq = cJSON_IsArray(raw_outgoing_fq) ? cJSON_GetArraySize(raw_outgoing_fq) : 0;
-		int nspaces = cJSON_IsArray(rawspaces) ? cJSON_GetArraySize(rawspaces) : 0;
+		int nincfq = cJSON_IsArray(raw_incoming_fq)
+						 ? cJSON_GetArraySize(raw_incoming_fq)
+						 : 0;
+		int noutfq = cJSON_IsArray(raw_outgoing_fq)
+						 ? cJSON_GetArraySize(raw_outgoing_fq)
+						 : 0;
+		int nspaces =
+			cJSON_IsArray(rawspaces) ? cJSON_GetArraySize(rawspaces) : 0;
 		int nconvs = cJSON_IsArray(rawconvs) ? cJSON_GetArraySize(rawconvs) : 0;
-		int nfriends = cJSON_IsArray(rawfriends) ? cJSON_GetArraySize(rawfriends) : 0;
+		int nfriends =
+			cJSON_IsArray(rawfriends) ? cJSON_GetArraySize(rawfriends) : 0;
 
-		YampUser* incoming_fq = malloc(sizeof(YampUser) * (nincfq ? nincfq : 1));
-		YampUser* outgoing_fq = malloc(sizeof(YampUser) * (noutfq ? noutfq : 1));
+		YampUser* incoming_fq =
+			malloc(sizeof(YampUser) * (nincfq ? nincfq : 1));
+		YampUser* outgoing_fq =
+			malloc(sizeof(YampUser) * (noutfq ? noutfq : 1));
 		YampSpace* spaces = malloc(sizeof(YampSpace) * (nspaces ? nspaces : 1));
-		YampChannel* convs = malloc(sizeof(YampChannel) * (nconvs ? nconvs : 1));
-		YampUser* friends = malloc(sizeof(YampUser) * (nfriends ? nfriends : 1));
+		YampChannel* convs =
+			malloc(sizeof(YampChannel) * (nconvs ? nconvs : 1));
+		YampUser* friends =
+			malloc(sizeof(YampUser) * (nfriends ? nfriends : 1));
 
 		for (int i = 0; i < nincfq; i++)
-			incoming_fq[i] = ParseUserObject(cJSON_GetArrayItem(raw_incoming_fq, i));
+			incoming_fq[i] =
+				ParseUserObject(cJSON_GetArrayItem(raw_incoming_fq, i));
 		for (int i = 0; i < noutfq; i++)
-			outgoing_fq[i] = ParseUserObject(cJSON_GetArrayItem(raw_outgoing_fq, i));
+			outgoing_fq[i] =
+				ParseUserObject(cJSON_GetArrayItem(raw_outgoing_fq, i));
 		for (int i = 0; i < nspaces; i++)
 			spaces[i] = ParseSpaceObject(cJSON_GetArrayItem(rawspaces, i));
 		for (int i = 0; i < nconvs; i++)
@@ -567,8 +602,74 @@ void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 		if (cb)
 			((YampFriendReqResolvedCb)cb)(callback_entry->data, success);
 		free(callback_entry->data);
+	} else if (strcmp(ep, "UploadFile") == 0) {
+		UploadFilePayload* payload = dat;
+		YampFileUploaded done = (YampFileUploaded)cb;
+		cJSON* tokitem = cJSON_GetObjectItem(response, "upload_token");
+
+		if (!success || !cJSON_IsString(tokitem) || !YampHTTPAddress) {
+			if (done)
+				done(NULL, 0);
+			goto upload_cleanup;
+		}
+
+		size_t ulen =
+			strlen(YampHTTPAddress) + strlen(tokitem->valuestring) + 32;
+		char* url = malloc(ulen);
+		snprintf(url, ulen, "%s/cdn/upload/%s", YampHTTPAddress,
+				 tokitem->valuestring);
+
+		size_t mlen = strlen(payload->mime) + 32;
+		char* mime = malloc(mlen);
+		snprintf(mime, mlen, "Content-Type: %s", payload->mime);
+
+		struct curl_slist* headers = NULL;
+		headers = curl_slist_append(headers, mime);
+		headers =
+			curl_slist_append(headers, "Expect:"); // no 100-continue stall
+
+		curl_buffer respbuf = {0}; // zeroed, on the stack
+		CURL* curl = curl_easy_init();
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+		curl_easy_setopt(curl, CURLOPT_URL, url);
+		curl_easy_setopt(curl, CURLOPT_POST, 1L);
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload->file);
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE,
+						 (curl_off_t)payload->len);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_buffer_write);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respbuf);
+
+		char* filename_out = NULL;
+		CURLcode rc = curl_easy_perform(curl);
+		long http_code = 0;
+		if (rc == CURLE_OK) {
+			curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+			if ((http_code == 200 || http_code == 201) && respbuf.buf) {
+				cJSON* resp =
+					cJSON_ParseWithLength((char*)respbuf.buf, respbuf.len);
+				cJSON* fn = resp ? cJSON_GetObjectItem(resp, "filename") : NULL;
+				if (cJSON_IsString(fn))
+					filename_out = strdup(fn->valuestring);
+				cJSON_Delete(resp);
+			}
+		}
+		if (done)
+			done(filename_out, filename_out != NULL);
+
+		free(filename_out);
+		free(respbuf.buf);
+		curl_slist_free_all(headers);
+		curl_easy_cleanup(curl);
+		free(mime);
+		free(url);
+
+	upload_cleanup:
+		free(payload->mime);
+		free(payload->file);
+		free(payload);
 	}
 }
+void YAMP_Init() { curl_global_init(CURL_GLOBAL_DEFAULT); }
 void* YAMPRecvLoop(void* fd) {
 	uint32_t len;
 	char* payload;
@@ -584,15 +685,14 @@ void* YAMPRecvLoop(void* fd) {
 					for (CallbackStackEntry* callback = CallbackStack; callback;
 						 callback = callback->after) {
 						if (reqid == callback->reqid) {
-							if(reqid == last_reqid){
+							if (reqid == last_reqid) {
 								last_reqid--;
 							}
 							HandleResponse(srvr, callback, success);
-							if (callback->before){
+							if (callback->before) {
 								callback->before->after = callback->after;
 							} else {
-								CallbackStack =
-									callback->after;
+								CallbackStack = callback->after;
 							}
 							if (callback->after)
 								callback->after->before = callback->before;
@@ -762,32 +862,31 @@ int SplitAddress(char* address, char** username, char** server) {
 	return 1;
 }
 
-void YAMPPushCallback(int reqid, char* endpoint,
-                      void* callback, void* data) {
-    CallbackStackEntry* entry = malloc(sizeof(*entry));
-    if (!entry)
-        return;
+void YAMPPushCallback(int reqid, char* endpoint, void* callback, void* data) {
+	CallbackStackEntry* entry = malloc(sizeof(*entry));
+	if (!entry)
+		return;
 
-    entry->callback = callback;
-    entry->reqid = reqid;
-    entry->endpoint = endpoint;
-    entry->data = data;
-    entry->after = NULL;
+	entry->callback = callback;
+	entry->reqid = reqid;
+	entry->endpoint = endpoint;
+	entry->data = data;
+	entry->after = NULL;
 
-    CallbackStackEntry* last_entry = CallbackStack;
+	CallbackStackEntry* last_entry = CallbackStack;
 
-    while (last_entry && last_entry->after)
-        last_entry = last_entry->after;
+	while (last_entry && last_entry->after)
+		last_entry = last_entry->after;
 
-    entry->before = last_entry;
+	entry->before = last_entry;
 
-    if (last_entry)
-        last_entry->after = entry;
-    else
-        CallbackStack = entry;
+	if (last_entry)
+		last_entry->after = entry;
+	else
+		CallbackStack = entry;
 }
-int YAMPSendRequest(SSL* fd, const char* endpoint,
-						   cJSON* data, void* callback, void* userdata) {
+int YAMPSendRequest(SSL* fd, const char* endpoint, cJSON* data, void* callback,
+					void* userdata) {
 	int reqid = last_reqid++;
 	YAMPPushCallback(reqid, endpoint, callback, userdata);
 
@@ -836,7 +935,8 @@ int YAMPListBuddies(SSL* fd, void* callback) {
 }
 
 int YAMPListConversations(SSL* fd, void* callback) {
-	YAMPSendRequest(fd, "ListConversations", cJSON_CreateObject(), callback, NULL);
+	YAMPSendRequest(fd, "ListConversations", cJSON_CreateObject(), callback,
+					NULL);
 	return 0;
 }
 // the message type here is slimmed, only relevant fields are used, you dont
@@ -970,11 +1070,23 @@ int YAMPTyping(SSL* fd, char* channel, void* callback) {
 	YAMPSendRequest(fd, "Typing", data, callback, NULL);
 	return 1;
 }
-char* YAMPGetHTTPBaseURI() { return YampHTTPAddress; }
-int YAMPQueryYAMPHTTP() { return YampHTTPAddress ? 1 : 0; }
 int YAMPDeleteMessage(SSL* fd, char* msg_id, void* callback) {
 	cJSON* data = cJSON_CreateObject();
 	cJSON_AddStringToObject(data, "message_id", msg_id);
 	YAMPSendRequest(fd, "DeleteMessage", data, callback, NULL);
+	return 1;
+}
+char* YAMPGetHTTPBaseURI() { return YampHTTPAddress; }
+int YAMPQueryYAMPHTTP() { return YampHTTPAddress ? 1 : 0; }
+int YAMPUploadFile(SSL* fd, char* MIME, unsigned char* file, int len,
+				   void* callback) {
+	UploadFilePayload* payload = malloc(sizeof(*payload));
+	payload->mime = strdup(MIME);
+	payload->file = malloc(len);
+	memcpy(payload->file, file, len);
+	payload->len = len;
+
+	cJSON* data = cJSON_CreateObject();
+	YAMPSendRequest(fd, "UploadFile", data, callback, payload);
 	return 1;
 }

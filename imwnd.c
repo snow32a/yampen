@@ -297,7 +297,7 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
 	currentChannel = g_object_get_data(G_OBJECT(child), "channel");
 	int type = (int)g_object_get_data(G_OBJECT(child), "type");
-	LastTypedAt=0;
+	LastTypedAt = 0;
 	if (type == YAMP_DM) {
 		BuildUserProfile(
 			*GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
@@ -316,7 +316,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		GtkWidget* recipientname = gtk_label_new(dpyname ? dpyname : username);
 		gtk_box_append(GTK_BOX(titlebox), recipientname);
 		gtk_box_append(GTK_BOX(chattitle), titlebox);
-		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
+		YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
+							  onYAMPMessageHistoryLoaded);
 		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	} else if (type == YAMP_GC) {
 		char* name = gtk_label_get_text(GTK_LABEL(child));
@@ -335,7 +336,8 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		if (members) {
 			BuildMemberList(members);
 		}
-		YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
+		YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
+							  onYAMPMessageHistoryLoaded);
 		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	}
 }
@@ -354,7 +356,7 @@ void RecursiveDeselectChannelTree(GtkWidget* parentwdg,
 }
 void OnChannelSelected(GtkListBox* box, GtkListBoxRow* row,
 					   gpointer user_data) {
-	LastTypedAt=0;
+	LastTypedAt = 0;
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "chat");
 	if (!row) {
 		return;
@@ -367,7 +369,8 @@ void OnChannelSelected(GtkListBox* box, GtkListBoxRow* row,
 	currentChannel =
 		((YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
 	YAMPJoinChannel(mainsock, currentChannel->id, NULL);
-	YAMPGetMessageHistory(mainsock, currentChannel->id,50,NULL,onYAMPMessageHistoryLoaded);
+	YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
+						  onYAMPMessageHistoryLoaded);
 }
 void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	gtk_widget_remove_css_class(dmsbutton, "active");
@@ -378,7 +381,7 @@ void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	YampSpace* space = user_data;
 	curSpace = space->id;
 
-	YAMPListSpaceChannels(mainsock, curSpace,onYAMPChannelsFetched);
+	YAMPListSpaceChannels(mainsock, curSpace, onYAMPChannelsFetched);
 }
 int InsertSpace(YampSpace space) {
 	printf("%s\n", space.id);
@@ -636,7 +639,7 @@ static void ShowChannelContextMenu(GtkWidget* attach_widget,
 
 	GdkRectangle rect = {(int)x, (int)y, 1, 1};
 	gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
-    gtk_widget_set_halign(GTK_WIDGET(popover), GTK_ALIGN_START);
+	gtk_widget_set_halign(GTK_WIDGET(popover), GTK_ALIGN_START);
 	gtk_popover_popup(GTK_POPOVER(popover));
 }
 static void OnChannelSidebarRightClick(GtkGestureClick* gesture, int n_press,
@@ -959,7 +962,8 @@ int InsertConvIntoList(YampChannel conv) {
 									   GTK_STYLE_PROVIDER(provider),
 									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 		g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
-		g_object_set_data(G_OBJECT(LBRowLabel), "channel", DupChannelObject(&conv));
+		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
+						  DupChannelObject(&conv));
 		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
 		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
 		gtk_box_append(GTK_BOX(ItemBox), Pfp);
@@ -969,7 +973,8 @@ int InsertConvIntoList(YampChannel conv) {
 		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
 	} else if (conv.type == YAMP_GC) {
 		YampUser* members = conv.people;
-		char* dispname = conv.name ? conv.name : JoinUsernames(members, conv.npeople);
+		char* dispname =
+			conv.name ? conv.name : JoinUsernames(members, conv.npeople);
 		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 		GtkWidget* LBRow = gtk_list_box_row_new();
 		GtkWidget* LBRowLabel = gtk_label_new(dispname);
@@ -986,7 +991,8 @@ int InsertConvIntoList(YampChannel conv) {
 		gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
 									   GTK_STYLE_PROVIDER(provider),
 									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-		g_object_set_data(G_OBJECT(LBRowLabel), "channel", DupChannelObject(&conv));
+		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
+						  DupChannelObject(&conv));
 		g_object_set_data(G_OBJECT(LBRowLabel), "id",
 						  strdup(ParseGCChannel(conv.id)));
 		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
@@ -1067,8 +1073,9 @@ void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 char FetchedUserProfile = false;
 GtkWidget* UsernameLabel;
 void SendFQBtnCB(GtkButton* btn, void* data) {
-	YAMPSendFriendReq(mainsock, gtk_entry_buffer_get_text(
-									gtk_entry_get_buffer(GTK_ENTRY(data))),NULL);
+	YAMPSendFriendReq(
+		mainsock,
+		gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(data))), NULL);
 	gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(data)), "", 0);
 }
 void SetupFriendsPane(GtkWidget* friendspane) {
@@ -1109,8 +1116,8 @@ static void FQPayloadFree(fqnotifpayload* p) {
 
 void AcceptFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
-	YAMPAcceptFriendReq(mainsock, payload->username,NULL);
-	YAMPStartDM(mainsock, payload->username,NULL);
+	YAMPAcceptFriendReq(mainsock, payload->username, NULL);
+	YAMPStartDM(mainsock, payload->username, NULL);
 	gtk_widget_unparent(payload->notif);
 	FQPayloadFree(payload);
 }
@@ -1166,9 +1173,42 @@ static gboolean scroll_tick(GtkWidget* w, GdkFrameClock* fc, gpointer data) {
 void ScrollChatToBottom(void) {
 	gtk_widget_add_tick_callback(chatscroll, scroll_tick, NULL, NULL);
 }
-
+void onYAMPFileUploaded(char* filename, int success){
+	printf("Uploaded file: %s, Success: %d",filename,success);
+}
 void UploadDialogFinish(GObject* source_object, GAsyncResult* result,
-						gpointer user_data) {}
+						gpointer user_data) {
+	GtkFileDialog* dialog = GTK_FILE_DIALOG(source_object);
+
+	GError* error = NULL;
+	GFile* file = gtk_file_dialog_open_finish(dialog, result, &error);
+
+	if (file) {
+		char* path = g_file_get_path(file);
+		char* buf;
+		gsize len;
+		if (g_file_load_contents(file, NULL, &buf, &len, NULL, &error)) {
+			gboolean uncertain;
+			char* mime = g_content_type_guess(
+				g_file_get_basename(file),
+				buf,
+				len,
+				&uncertain);
+
+			char* mime_type = g_content_type_get_mime_type(mime);
+
+			YAMPUploadFile(mainsock, mime,buf,len,onYAMPFileUploaded);
+
+			g_free(buf);
+			g_free(path);
+			g_object_unref(file);
+		} else {
+			return;
+		}
+	} else if (error) {
+		g_error_free(error);
+	}
+}
 void OnUploadBtnClicked(GtkButton* btn, void* data) {
 	GtkFileDialog* dlg = gtk_file_dialog_new();
 	gtk_file_dialog_open(dlg, NULL, NULL, UploadDialogFinish, NULL);
@@ -1196,24 +1236,24 @@ void TypingRefreshLabel(void) {
 	char* s;
 	if (n == 1) {
 		TypingEntry* a = g_ptr_array_index(typing_users, 0);
-		s = malloc(14+strlen(a->name));
+		s = malloc(14 + strlen(a->name));
 		sprintf(s, "%s is typing...", a->name);
-	} else if (n<8){
-		int string_len = 15+n-1;
-		for(int i = 0; i<n; i++){
+	} else if (n < 8) {
+		int string_len = 15 + n - 1;
+		for (int i = 0; i < n; i++) {
 			TypingEntry* a = g_ptr_array_index(typing_users, i);
 			string_len += strlen(a->name);
 		}
-		s = malloc(string_len+1);
+		s = malloc(string_len + 1);
 		char* curstr = s;
-		for(int i = 0; i<n; i++){
+		for (int i = 0; i < n; i++) {
 			TypingEntry* a = g_ptr_array_index(typing_users, i);
-			strcpy(curstr,a->name);
-			if(i!=n-1){
-				curstr[strlen(a->name)]=' ';
+			strcpy(curstr, a->name);
+			if (i != n - 1) {
+				curstr[strlen(a->name)] = ' ';
 				curstr++;
 			}
-			curstr+=strlen(a->name);
+			curstr += strlen(a->name);
 		}
 		strcpy(curstr, " are typing...");
 	} else {
@@ -1257,16 +1297,15 @@ void TypingAdd(const char* id, const char* name) {
 		TypingEntry* e = g_ptr_array_index(typing_users, i);
 		if (strcmp(e->id, id) == 0) {
 			g_source_remove(e->timeout);
-			e->timeout = g_timeout_add_seconds(TYPING_TIMEOUT_SECONDS,
-											   TypingExpire, e);
+			e->timeout =
+				g_timeout_add_seconds(TYPING_TIMEOUT_SECONDS, TypingExpire, e);
 			return;
 		}
 	}
 	TypingEntry* e = calloc(1, sizeof(TypingEntry));
 	e->id = strdup(id);
 	e->name = strdup(name);
-	e->timeout =
-		g_timeout_add_seconds(TYPING_TIMEOUT_SECONDS, TypingExpire, e);
+	e->timeout = g_timeout_add_seconds(TYPING_TIMEOUT_SECONDS, TypingExpire, e);
 	g_ptr_array_add(typing_users, e);
 	TypingRefreshLabel();
 }
@@ -1454,8 +1493,8 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_widget_set_visible(typingindicator, 0);
 	replyindicator = gtk_label_new(NULL);
 	gtk_widget_set_visible(replyindicator, 0);
-	gtk_box_append(GTK_BOX(chatvbox),typingindicator);
-	gtk_box_append(GTK_BOX(chatvbox),replyindicator);
+	gtk_box_append(GTK_BOX(chatvbox), typingindicator);
+	gtk_box_append(GTK_BOX(chatvbox), replyindicator);
 	gtk_box_append(GTK_BOX(chatvbox), inputhbox);
 
 	GtkWidget* frame_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
@@ -1614,7 +1653,7 @@ void onYAMPNewFriend(YampUser friend) {
 	*heapfriend = friend;
 	g_idle_add(MainThreadNewFriend, heapfriend);
 }
-gboolean MainThreadNewConversation(YampChannel* heapconv){
+gboolean MainThreadNewConversation(YampChannel* heapconv) {
 	InsertConvIntoList(*heapconv);
 	free(heapconv);
 	return G_SOURCE_REMOVE;
@@ -1692,14 +1731,15 @@ void onYAMPUserDetailsFetched(cJSON* Details) {
 }
 
 typedef struct {
-	YampMessage *msg;
+	YampMessage* msg;
 	int nonce;
 } IMReceivePayload;
 
 static gboolean receive_im_main_thread(gpointer user_data) {
 	IMReceivePayload* payload = user_data;
 
-	if (currentChannel && strcmp(currentChannel->id, payload->msg->channel) == 0) {
+	if (currentChannel &&
+		strcmp(currentChannel->id, payload->msg->channel) == 0) {
 		char* id;
 		YampUser* usr = &payload->msg->author;
 		id = usr->id;
@@ -1716,7 +1756,7 @@ static gboolean receive_im_main_thread(gpointer user_data) {
 					gtk_list_box_remove(GTK_LIST_BOX(chatarea), row);
 			}
 		}
-		PushUIMessage(chatscroll, chatarea,payload->msg, 0);
+		PushUIMessage(chatscroll, chatarea, payload->msg, 0);
 		ScrollChatToBottom();
 	} else {
 		GtkWidget* notifcontent = gtk_label_new(payload->msg->content);
@@ -1733,17 +1773,17 @@ void onYAMPReceiveIM(YampMessage* msg, int nonce) {
 	payload->nonce = nonce;
 	g_idle_add(receive_im_main_thread, payload);
 }
-typedef struct{
+typedef struct {
 	YampMessage** msgs;
 	int nmsgs;
 	int hasmore;
 } HistoryLoadPayload;
-gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload){
+gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload) {
 	gtk_list_box_remove_all(GTK_LIST_BOX(chatarea));
-	if(!payload->hasmore){
-		PushChannelBanner(chatarea,currentChannel);
+	if (!payload->hasmore) {
+		PushChannelBanner(chatarea, currentChannel);
 	}
-	for(int i = 0; i<payload->nmsgs; i++){
+	for (int i = 0; i < payload->nmsgs; i++) {
 		char* id;
 		YampUser* usr = &payload->msgs[i]->author;
 		id = usr->id;
@@ -1751,7 +1791,7 @@ gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload){
 			return G_SOURCE_REMOVE;
 		}
 		char* dispname = usr->displayname ? usr->displayname : usr->username;
-		PushUIMessage(chatscroll, chatarea,payload->msgs[i], 0);
+		PushUIMessage(chatscroll, chatarea, payload->msgs[i], 0);
 	}
 	ScrollChatToBottom();
 	for (int i = 0; i < payload->nmsgs; i++)
@@ -1782,16 +1822,18 @@ void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs, int hasmore) {
 
 	g_idle_add(G_SOURCE_FUNC(HistoryLoadedMainThread), payload);
 }
-gboolean MessageDeleted_MainThread(char* message_id){ // well i just casted the func below rather than passing a GPointer in the arguments
+gboolean MessageDeleted_MainThread(
+	char* message_id) { // well i just casted the func below rather than passing
+						// a GPointer in the arguments
 	DeleteUIMessage(chatscroll, chatarea, message_id);
 	ScrollChatToBottom();
 	free(message_id);
 	return G_SOURCE_REMOVE;
 }
-void onYAMPMessageDeleted(char* message_id){
+void onYAMPMessageDeleted(char* message_id) {
 	g_idle_add((GSourceFunc)MessageDeleted_MainThread, strdup(message_id));
 }
-typedef struct{
+typedef struct {
 	YampUser* user;
 	char* channel_id;
 } MainThreadCJLPayload;
@@ -1803,8 +1845,9 @@ gboolean ChannelJoined_MainThread(MainThreadCJLPayload* payload) {
 							   : payload->user->username;
 		GtkWidget* row = gtk_list_box_row_new();
 		char* safe_name = g_markup_escape_text(name ? name : "?", -1);
-		char* markup = g_strdup_printf(
-			"<span foreground=\"#2ecc71\">➜</span> <b>%s</b> joined this channel", safe_name);
+		char* markup = g_strdup_printf("<span foreground=\"#2ecc71\">➜</span> "
+									   "<b>%s</b> joined this channel",
+									   safe_name);
 		GtkWidget* label = gtk_label_new(NULL);
 		gtk_label_set_markup(GTK_LABEL(label), markup);
 		gtk_label_set_xalign(GTK_LABEL(label), 0.0);
@@ -1833,7 +1876,8 @@ gboolean ChannelLeft_MainThread(MainThreadCJLPayload* payload) {
 		GtkWidget* row = gtk_list_box_row_new();
 		char* safe_name = g_markup_escape_text(name ? name : "?", -1);
 		char* markup = g_strdup_printf(
-			"<span foreground=\"#cc2e71\">⬅</span> <b>%s</b> left this channel", safe_name);
+			"<span foreground=\"#cc2e71\">⬅</span> <b>%s</b> left this channel",
+			safe_name);
 		GtkWidget* label = gtk_label_new(NULL);
 		gtk_label_set_markup(GTK_LABEL(label), markup);
 		gtk_label_set_xalign(GTK_LABEL(label), 0.0);
@@ -1855,14 +1899,16 @@ gboolean ChannelLeft_MainThread(MainThreadCJLPayload* payload) {
 }
 
 void onYAMPChannelJoined(YampUser* user, char* channel_id) {
-	if (!user || !channel_id) return;
+	if (!user || !channel_id)
+		return;
 	MainThreadCJLPayload* payload = malloc(sizeof(*payload));
 	payload->channel_id = strdup(channel_id);
 	payload->user = DupUserType(user);
 	g_idle_add((GSourceFunc)ChannelJoined_MainThread, payload);
 }
-void onYAMPChannelLeave(YampUser* user, char* channel_id){
-	if (!user || !channel_id) return;
+void onYAMPChannelLeave(YampUser* user, char* channel_id) {
+	if (!user || !channel_id)
+		return;
 	MainThreadCJLPayload* payload = malloc(sizeof(*payload));
 	payload->channel_id = strdup(channel_id);
 	payload->user = DupUserType(user);
