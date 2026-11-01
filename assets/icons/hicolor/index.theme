@@ -1,0 +1,9 @@
+[Icon Theme]
+Name=hicolor
+Directories=scalable/symbolic
+
+[scalable/symbolic]
+Size=16
+Type=Scalable
+MinSize=8
+MaxSize=512
