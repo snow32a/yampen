@@ -13,6 +13,7 @@ char* YampHTTPAddress;
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <curl/curl.h>
 typedef SOCKET socket_fd;
 #else
 #include <sys/socket.h>
