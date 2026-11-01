@@ -173,6 +173,8 @@ LIBS += -lharfbuzz
 LIBS += -lcairo-gobject
 LIBS += -lcairo
 LIBS += -lrsvg-2
+
+LIBS += -lwinpthread
 EOF
 
         ;;

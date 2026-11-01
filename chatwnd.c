@@ -11,6 +11,7 @@
 #include "hmap/hashmap.h"
 #include "chatwnd.h"
 #include "imwnd.h"
+#include <pthread.h>
 typedef struct {
 	char* where;
 	GtkWidget* EntryArea;
