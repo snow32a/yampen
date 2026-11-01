@@ -250,11 +250,12 @@ void OnSaveChosen(GObject* src, GAsyncResult* res, gpointer data) {
 	pthread_create(&thread,NULL,DownloadThread,j);
 }
 
-void OnAttachmentDownload(GtkButton* btn, char* url) {
+gboolean OnAttachmentDownload(GtkButton* btn, char* url) {
     GtkRoot* root = gtk_widget_get_root(GTK_WIDGET(btn));
     GtkWindow* parent = root ? GTK_WINDOW(root) : NULL;
 
     DownloadJob* j = malloc(sizeof(*j));
+	*j=(DownloadJob){0};
     j->url    = strdup(url);
     j->btn    = GTK_WIDGET(g_object_ref(btn));
     j->parent = parent;
@@ -269,8 +270,11 @@ void OnAttachmentDownload(GtkButton* btn, char* url) {
 
     gtk_file_dialog_save(dlg, parent, NULL, OnSaveChosen, j);
     g_object_unref(dlg);
+	return TRUE;
 }
-
+gboolean OnAttachmentFillerCB(GtkLinkButton* btn, gpointer user_data){
+	return TRUE;
+}
 void PushAttachments(GtkWidget* msgvbox, YampMessage* msg) {
 	for (int i = 0; i < msg->nAttachments; i++) {
 		char* url = ProcessAttachmentURL(msg->attachments[i].url);
@@ -316,6 +320,9 @@ void PushAttachments(GtkWidget* msgvbox, YampMessage* msg) {
 			gtk_widget_add_css_class(attachmentbox, "attachment-box");
 			GtkWidget* btn = gtk_link_button_new_with_label(url, name);
 			g_signal_connect_data(btn,"clicked",G_CALLBACK(OnAttachmentDownload),strdup(url),FreeAttachmentURLData, 0);
+			g_signal_connect_data(download_btn,"clicked",G_CALLBACK(OnAttachmentDownload),strdup(url),FreeAttachmentURLData, 0);
+			g_signal_connect(btn,"activate-link",G_CALLBACK(OnAttachmentFillerCB),NULL);
+
 			gtk_widget_set_halign(btn, GTK_ALIGN_FILL);
 			gtk_box_append(GTK_BOX(attachmentbox), icon_wdg);
 			gtk_box_append(GTK_BOX(attachmentbox), btn);
