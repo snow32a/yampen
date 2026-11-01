@@ -59,8 +59,9 @@ typedef struct {
 typedef struct{
 	char* url;
 	char* mime;
+	char* filename;
 } YampAttachment;
-// NOTE The author field in below is an user field unlike the yampd ID field, we may change it at yampd's side
+// NOTE The author field in below is an user field unlike the yampd ID field, we may change it at yampd's side to match us
 // be careful when syncing YampMessage
 typedef struct YampMessage {
 	char id[16+1];

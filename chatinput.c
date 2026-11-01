@@ -24,6 +24,7 @@ void FinishSend(PendingSend* ps) {
 	for (int i = 0; i < ps->msg.nAttachments; i++) {
 		free((gchar*)ps->msg.attachments[i].url);
 		free((gchar*)ps->msg.attachments[i].mime);
+		free((gchar*)ps->msg.attachments[i].filename);
 	}
 	free(ps->msg.attachments);
 	free((gchar*)ps->msg.content);
@@ -42,7 +43,7 @@ static gboolean UploadDoneIdle(gpointer p) {
 	if (d->url)
 		uc->att->url = d->url;
 
-    free(uc);
+	free(uc);
 	g_free(d);
 
 	if (--ps->pending == 0)
@@ -53,9 +54,7 @@ static gboolean UploadDoneIdle(gpointer p) {
 void YAMPUploadAttachmentCB(char* url, int success, void* ud) {
 	UploadDone* d = g_new0(UploadDone, 1);
 	d->uc = ud;
-	d->url = (success && url)
-				 ? strdup(url)
-				 : NULL;
+	d->url = (success && url) ? strdup(url) : NULL;
 	g_idle_add(UploadDoneIdle, d);
 }
 int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
@@ -84,19 +83,21 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 		char* content = gtk_text_buffer_get_text(buf, &start, &end, TRUE);
 
 		char* first = content;
-		while (*first && g_ascii_isspace((guchar)*first))
-			first++;
+		if (curAttachements == NULL) {
+			while (*first && g_ascii_isspace((guchar)*first))
+				first++;
 
-		char* last = content + strlen(content);
-		while (last > first && g_ascii_isspace((guchar)last[-1]))
-			last--;
+			char* last = content + strlen(content);
+			while (last > first && g_ascii_isspace((guchar)last[-1]))
+				last--;
 
-		if (first == last) {
-			g_free(content);
-			return GDK_EVENT_STOP;
+			if (first == last) {
+				g_free(content);
+				return GDK_EVENT_STOP;
+			}
+
+			*last = '\0';
 		}
-
-		*last = '\0';
 		PendingSend* ps = calloc(1, sizeof(*ps));
 		if (isReplying)
 			strcpy(ps->reply.id, ReplyingToMsg);
@@ -145,6 +146,7 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 
 				YampAttachment* att = &ps->msg.attachments[i];
 				att->mime = mime;
+				att->filename = strdup(basename);
 
 				UploadCtx* uc = g_new0(UploadCtx, 1);
 				uc->ps = ps;

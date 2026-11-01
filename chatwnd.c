@@ -297,7 +297,7 @@ void PushAttachments(GtkWidget* msgvbox, YampMessage* msg) {
 			f->pic = g_object_ref(pic);
 			g_thread_unref(g_thread_new("attach", AttachFetchThread, f));
 		} else {
-			char* name = g_path_get_basename(msg->attachments[i].url);
+			char* name = msg->attachments[i].filename ? msg->attachments[i].filename : g_path_get_basename(msg->attachments[i].url);
 			char* q = strchr(name, '?');
 			if (q)
 				*q = '\0';
@@ -774,6 +774,7 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 		gtk_widget_set_opacity(msgtext, 0.5f);
 	}
 
+	if(msg->content && strlen(msg->content)){
 	GtkCssProvider* msgbubprovider = gtk_css_provider_new();
 	gtk_css_provider_load_from_string(
 		msgbubprovider, "box { padding: 10px; border-radius: 10px; "
@@ -787,6 +788,7 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 
 	gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
 	gtk_box_append(GTK_BOX(msgvbox), msgtext);
+	}
 	PushAttachments(msgvbox, msg);
 
 	GtkAdjustment* vadj =

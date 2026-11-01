@@ -58,7 +58,7 @@ typedef struct {
 	char* mime;
 	unsigned char* file;
 	int len;
-	void* userdata
+	void* userdata;
 } UploadFilePayload;
 
 typedef struct CallbackStackEntry {
@@ -432,6 +432,7 @@ cJSON* CreateAttachmentJSON(YampAttachment* attachment) {
 	cJSON* obj = cJSON_CreateObject();
 	cJSON_AddStringToObject(obj, "url", attachment->url);
 	cJSON_AddStringToObject(obj, "mime", attachment->mime);
+	cJSON_AddStringToObject(obj, "filename", attachment->filename);
 	return obj; // very meowsome
 }
 YampAttachment* AllocAttachmentType(YampAttachment* attachment) {
@@ -439,11 +440,13 @@ YampAttachment* AllocAttachmentType(YampAttachment* attachment) {
 	*ret = *attachment;
 	ret->url = safe_strdup(attachment->url);
 	ret->mime = safe_strdup(attachment->mime);
+	ret->filename = safe_strdup(attachment->filename);
 	return ret;
 }
 void FreeAttachmentTypeFields(YampAttachment* attach) {
 	free(attach->url);
 	free(attach->mime);
+	free(attach->filename);
 }
 void FreeAttachmentObject(YampAttachment* attach) {
 	FreeAttachmentTypeFields(attach);
@@ -456,6 +459,8 @@ YampAttachment* ParseAttachmentJSON(cJSON* json) {
 	YampAttachment attachment = {0};
 	attachment.mime = cJSON_GetStringValue(cJSON_GetObjectItem(json, "mime"));
 	attachment.url = cJSON_GetStringValue(cJSON_GetObjectItem(json, "url"));
+	attachment.filename = cJSON_GetStringValue(cJSON_GetObjectItem(json, "filename"));
+	attachment.filename = attachment.filename ? attachment.filename : attachment.url; // Substitute it for the url
 	return AllocAttachmentType(&attachment);
 }
 char* ProcessAttachmentURL(char* input){
