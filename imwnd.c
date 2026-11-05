@@ -68,6 +68,7 @@ GtkWidget* dmsbutton;
 GtkWidget* GuildVBOX;
 GtkWidget* GuildList;
 GtkWidget* SelfPfp;
+GtkWidget* SelfPfpFrame;
 GtkWidget* chatscroll;
 GtkWidget* chatarea;
 GtkWidget* DisplayNameLabel;
@@ -128,6 +129,138 @@ YampUser* cached_friends = NULL;
 int ncached_friends = 0;
 
 void onYAMPDisconnected() { g_idle_add(onUIDisconnected, 0); }
+#define AVATAR_MAX_BYTES (8 * 1024 * 1024)
+
+typedef struct {
+	char* url;
+	char* cache_path;
+	int px;
+	GWeakRef widget;
+	GBytes* bytes;
+} AvatarFetch;
+
+size_t AvatarWriteCb(char* ptr, size_t size, size_t nmemb, void* ud) {
+	GByteArray* buf = ud;
+	size_t n = size * nmemb;
+	if (buf->len + n > AVATAR_MAX_BYTES)
+		return 0;
+	g_byte_array_append(buf, (guint8*)ptr, n);
+	return n;
+}
+
+gboolean AvatarDone(gpointer data) {
+	AvatarFetch* f = data;
+	GtkWidget* w = g_weak_ref_get(&f->widget);
+
+	if (w) {
+		if (f->bytes) {
+			GError* err = NULL;
+			GdkTexture* tex = gdk_texture_new_from_bytes(f->bytes, &err);
+			if (tex) {
+				gtk_image_set_from_paintable(GTK_IMAGE(w), GDK_PAINTABLE(tex));
+				if (f->px > 0)
+					gtk_image_set_pixel_size(GTK_IMAGE(w), f->px);
+				g_object_unref(tex);
+			} else {
+				g_warning("Bad avatar image from %s: %s", f->url, err->message);
+				g_clear_error(&err);
+			}
+		}
+		g_object_unref(w);
+	}
+
+	if (f->bytes)
+		g_bytes_unref(f->bytes);
+	g_weak_ref_clear(&f->widget);
+	g_free(f->url);
+	g_free(f->cache_path);
+	g_free(f);
+	return G_SOURCE_REMOVE;
+}
+
+gpointer AvatarThread(gpointer data) {
+	AvatarFetch* f = data;
+	GByteArray* buf = g_byte_array_new();
+
+	CURL* c = curl_easy_init();
+	if (c) {
+		curl_easy_setopt(c, CURLOPT_URL, f->url);
+		curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, AvatarWriteCb);
+		curl_easy_setopt(c, CURLOPT_WRITEDATA, buf);
+		curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L); // HTTP >= 400 = failure
+		curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
+		curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+		CURLcode rc = curl_easy_perform(c);
+		curl_easy_cleanup(c);
+		if (rc != CURLE_OK) {
+			g_warning("Avatar fetch failed (%s): %s", f->url,
+					  curl_easy_strerror(rc));
+			g_byte_array_set_size(buf, 0);
+		}
+	}
+
+	if (buf->len) {
+		if (f->cache_path)
+			g_file_set_contents(f->cache_path, (gchar*)buf->data, buf->len,
+								NULL);
+		f->bytes = g_byte_array_free_to_bytes(buf);
+	} else {
+		g_byte_array_free(buf, TRUE);
+	}
+
+	g_idle_add(AvatarDone, f);
+	return NULL;
+}
+void LoadAvatarAsync(GtkWidget* image, const char* url, const char* cache_path,
+					 int px) {
+	if (!image || !url || !*url)
+		return;
+	AvatarFetch* f = g_new0(AvatarFetch, 1);
+	f->url = g_strdup(url);
+	f->cache_path = g_strdup(cache_path);
+	f->px = px;
+	g_weak_ref_init(&f->widget, image);
+	g_thread_unref(g_thread_new("avatar-fetch", AvatarThread, f));
+}
+
+
+
+static void SetStatusFrameColor(GtkWidget* frame, const char* hex) {
+	GtkCssProvider* p = g_object_get_data(G_OBJECT(frame), "status-provider");
+	if (!p) {
+		p = gtk_css_provider_new();
+		gtk_style_context_add_provider(gtk_widget_get_style_context(frame),
+									   GTK_STYLE_PROVIDER(p),
+									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+		g_object_set_data_full(G_OBJECT(frame), "status-provider", p,
+							   g_object_unref);
+	}
+	char* css = g_strdup_printf(".pfp-frame { border: 2px solid #%s; "
+								"border-radius: 50%%; padding: 2px; }",
+								hex);
+	gtk_css_provider_load_from_string(p, css);
+	g_free(css);
+}
+
+GtkWidget* WrapInStatusFrame(GtkWidget* img, int px, const char* hex) {
+	gtk_image_set_pixel_size(GTK_IMAGE(img), px);
+	gtk_widget_set_size_request(img, px, px);
+	gtk_widget_set_halign(img, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(img, GTK_ALIGN_CENTER);
+	gtk_widget_set_overflow(img, GTK_OVERFLOW_HIDDEN);
+
+	GtkWidget* frame = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_widget_add_css_class(frame, "pfp-frame");
+	gtk_widget_set_halign(frame, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(frame, GTK_ALIGN_CENTER);
+	gtk_widget_set_overflow(frame, GTK_OVERFLOW_HIDDEN);
+	gtk_box_append(GTK_BOX(frame), img);
+
+	SetStatusFrameColor(frame, hex);
+	return frame;
+}
+
 void BuildUserProfile(YampUser usr) {
 	GtkWidget* overlay = gtk_overlay_new();
 
@@ -147,7 +280,13 @@ void BuildUserProfile(YampUser usr) {
 
 	GtkWidget* pfp;
 	if (usr.pfp && strlen(usr.pfp)) {
-
+		pfp = gtk_image_new();
+		char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
+		char* url = ProcessAttachmentURL(usr.pfp);
+		LoadAvatarAsync(pfp, url, pfp_path, 80);
+		InsertPfpPath(usr.id, pfp_path);
+		free(url);
+		g_free(pfp_path);
 	} else {
 		char pfppath[38];
 		sprintf(pfppath, "/org/yampen/assets/pfps/default%d.png",
@@ -245,34 +384,28 @@ void BuildMemberList(MemberSet* set) {
 		gtk_widget_set_margin_top(box, 4);
 		gtk_widget_set_margin_bottom(box, 4);
 
-		char* respath = g_strdup_printf("/org/yampen/assets/pfps/default%d.png",
-										GetDefaultPfp(u->id));
-		GtkWidget* pfp = gtk_image_new_from_resource(respath);
-		g_free(respath);
+
+		GtkWidget* pfp;
+		if (u->pfp && *u->pfp) {
+			pfp = gtk_image_new();
+			char* pfp_path = g_build_filename(pfp_dir, u->id, NULL);
+			char* url = ProcessAttachmentURL(u->pfp);
+			LoadAvatarAsync(pfp, url, pfp_path, 32);
+			InsertPfpPath(u->id, pfp_path);
+			free(url);
+			g_free(pfp_path);
+		} else {
+			char* respath = g_strdup_printf(
+				"/org/yampen/assets/pfps/default%d.png", GetDefaultPfp(u->id));
+			pfp = gtk_image_new_from_resource(respath);
+			g_free(respath);
+		}
 		gtk_widget_add_css_class(pfp, "avatar");
-		gtk_image_set_pixel_size(GTK_IMAGE(pfp), 32);
-		gtk_widget_set_size_request(pfp, 32, 32);
-		gtk_widget_set_halign(pfp, GTK_ALIGN_CENTER);
-		gtk_widget_set_valign(pfp, GTK_ALIGN_CENTER);
-		gtk_widget_set_overflow(pfp, GTK_OVERFLOW_HIDDEN);
 
-		GtkWidget* frame = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-		gtk_widget_add_css_class(frame, "pfp-frame");
-		gtk_widget_set_halign(frame, GTK_ALIGN_CENTER);
-		gtk_widget_set_valign(frame, GTK_ALIGN_CENTER);
-		gtk_box_append(GTK_BOX(frame), pfp);
-
-		GtkCssProvider* provider = gtk_css_provider_new();
-		char style[160];
-		snprintf(style, sizeof(style),
-				 ".pfp-frame { border: 2px solid #%s; border-radius: 50%%; "
-				 "padding: 2px; }",
-				 StatusToColor(u->status.status));
-		gtk_css_provider_load_from_string(provider, style);
-		gtk_style_context_add_provider(gtk_widget_get_style_context(frame),
-									   GTK_STYLE_PROVIDER(provider),
-									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-		g_object_unref(provider);
+		const char* stat = u->status.status ? u->status.status : "offline";
+		GtkWidget* frame = WrapInStatusFrame(pfp, 32, StatusToColor(stat));
+		g_object_set_data_full(G_OBJECT(frame), "user-id", g_strdup(u->id),
+							   g_free);
 		char* label_txt = (curUserID && strcmp(u->id, curUserID) == 0)
 							  ? g_strdup_printf("%s (you)", name)
 							  : g_strdup(name);
@@ -944,20 +1077,15 @@ int InsertConvIntoList(YampChannel conv) {
 		GtkWidget* LBRowLabel = gtk_label_new(usr.displayname);
 		GtkWidget* Pfp;
 		if (usr.pfp && strlen(usr.pfp)) {
-			curl_easy_setopt(curl, CURLOPT_URL, usr.pfp);
-			char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
-			FILE* fl = fopen(pfp_path, "wb");
-			curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write_cb);
-			curl_easy_perform(curl);
-			fclose(fl);
-
-			Pfp = gtk_image_new_from_file(pfp_path);
+			Pfp = gtk_image_new();
 			gtk_widget_add_css_class(Pfp, "avatar");
 			gtk_widget_set_overflow(Pfp, GTK_OVERFLOW_HIDDEN);
 
+			char* pfp_path = g_build_filename(pfp_dir, usr.id, NULL);
+			char* fetchurl = ProcessAttachmentURL(usr.pfp);
+			LoadAvatarAsync(Pfp, fetchurl, pfp_path, 32);
+			free(fetchurl);
 			InsertPfpPath(usr.id, pfp_path);
-
 		} else {
 			char pfppath[37];
 			sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
@@ -1190,7 +1318,7 @@ void ScrollChatToBottom(void) {
 void onYAMPFileUploaded(char* filename, int success) {
 	// printf("Uploaded file: %s, Success: %d\n",filename,success);
 }
-typedef struct{
+typedef struct {
 	AttachementEntry* entry;
 	GtkWidget* overlay;
 } DeleteAttachPayload;
@@ -1203,10 +1331,10 @@ void OnDeleteAttachement(GtkButton* btn, DeleteAttachPayload* data) {
 	if (parent)
 		gtk_box_remove(GTK_BOX(parent), overlay);
 
-	if(data->entry->before){
+	if (data->entry->before) {
 		data->entry->before->after = data->entry->after;
 	}
-	if(data->entry->after){
+	if (data->entry->after) {
 		data->entry->after->before = data->entry->before;
 	}
 }
@@ -1272,13 +1400,13 @@ void UploadDialogFinish(GObject* source_object, GAsyncResult* result,
 
 		g_signal_connect(deletebtn, "clicked", G_CALLBACK(OnDeleteAttachement),
 						 deletepayload);
-		
+
 		AttachementEntry* attachentry = g_new0(AttachementEntry, 1);
 		attachentry->path = strdup(path);
 		free(path);
 		path = NULL;
-		deletepayload->overlay=attachementoverlay;
-		deletepayload->entry=attachentry;
+		deletepayload->overlay = attachementoverlay;
+		deletepayload->entry = attachentry;
 
 		AttachementEntry* lastentry = curAttachements;
 		if (lastentry) {
@@ -1638,15 +1766,12 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_widget_add_controller(entry, GTK_EVENT_CONTROLLER(key_controller));
 
 	if (dat->usr.pfp && strlen(dat->usr.pfp)) {
-		curl_easy_setopt(curl, CURLOPT_URL, dat->usr.pfp);
 		char* pfp_path = g_build_filename(pfp_dir, dat->usr.id, NULL);
-		FILE* fl = fopen(pfp_path, "wb");
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, fl);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, file_write_cb);
-		curl_easy_perform(curl);
-		fclose(fl);
+		char* url = ProcessAttachmentURL(dat->usr.pfp);
+		SelfPfp = gtk_image_new();
+		LoadAvatarAsync(SelfPfp, url, pfp_path, 36);
+		free(url);
 		InsertPfpPath(dat->usr.id, pfp_path);
-		SelfPfp = gtk_image_new_from_file(pfp_path);
 	} else {
 		char pfppath[37];
 		sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
@@ -1654,23 +1779,16 @@ void StartMainIMWindow(const YampLoginData* dat) {
 		SelfPfp = gtk_image_new_from_resource(pfppath);
 	}
 	gtk_widget_add_css_class(SelfPfp, "avatar");
-	gtk_widget_set_overflow(SelfPfp, GTK_OVERFLOW_HIDDEN);
-	GtkCssProvider* provider = gtk_css_provider_new();
-	gtk_css_provider_load_from_string(
-		provider,
-		"* { border: 2px solid #108020; padding: 2px; -gtk-icon-size: 36px; }");
-	// the user logs in as online by default so this is fixed
-	// change when that statement changes
+	SelfPfpFrame = WrapInStatusFrame(SelfPfp, 36, "108020");
 
 	GtkWidget* UserDetailsArea = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 	gtk_widget_set_size_request(UserDetailsArea, 0, 50);
 	GtkWidget* UserDetailsBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 	gtk_widget_set_hexpand(UserDetailsBox, 1);
-	gtk_style_context_add_provider(gtk_widget_get_style_context(SelfPfp),
-								   GTK_STYLE_PROVIDER(provider),
-								   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-	gtk_box_append(GTK_BOX(UserDetailsBox), SelfPfp);
-	gtk_widget_set_valign(SelfPfp, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(SelfPfpFrame, GTK_ALIGN_CENTER);
+	gtk_box_append(GTK_BOX(UserDetailsBox), SelfPfpFrame);
+	// the user logs in as online by default so this is fixed
+	// change when that statement changes
 	GtkWidget* UsernameBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	gtk_widget_set_valign(UsernameBox, GTK_ALIGN_CENTER);
 	DisplayNameLabel = gtk_label_new(displayName);

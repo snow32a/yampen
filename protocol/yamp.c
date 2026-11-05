@@ -291,7 +291,7 @@ YampUser ParseUserObject(cJSON* rawusr) {
 	usr.username = safe_strdup(JsonStrOrNull(rawusr, "name"));
 	usr.displayname = safe_strdup(JsonStrOrNull(rawusr, "display_name"));
 	usr.description = safe_strdup(JsonStrOrNull(rawusr, "description"));
-	usr.pfp = safe_strdup(JsonStrOrNull(rawusr, "pfp"));
+	usr.pfp = safe_strdup(JsonStrOrNull(rawusr, "avatar"));
 
 	cJSON* st = cJSON_GetObjectItem(rawusr, "status");
 	usr.status.status = safe_strdup(JsonStrOrNull(st, "status"));
@@ -398,7 +398,7 @@ cJSON* CreateUserObject(YampUser user) {
 		cJSON_AddStringToObject(returnObj, "description", user.description);
 
 	if (user.pfp)
-		cJSON_AddStringToObject(returnObj, "pfp", user.pfp);
+		cJSON_AddStringToObject(returnObj, "avatar", user.pfp);
 
 	if (user.status.RPCName || user.status.RPCDesc || user.status.RPCIcon ||
 		user.status.status) {

@@ -680,6 +680,7 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 
 			userpfpinner = gtk_image_new_from_resource(defaultpfppath);
 		} else {
+			printf("%s\n",GetPfpPath(msg->author.id));
 			userpfpinner = gtk_image_new_from_file(GetPfpPath(msg->author.id));
 		}
 

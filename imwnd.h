@@ -14,3 +14,5 @@ extern int isReplying;
 extern char* ReplyingToMsg;
 extern AttachementEntry* curAttachements;
 extern GtkWidget* AttachementsBox;
+void LoadAvatarAsync(GtkWidget* image, const char* url,
+					 const char* cache_path, int px);

@@ -39,7 +39,10 @@ void InitMessageSilhouettes(void) {
         free
     );
 }
-void InitPfpTable() { pfpmap = g_hash_table_new(g_str_hash, g_str_equal); }
+
+void InitPfpTable() {
+	pfpmap = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+}
 void InitAllTables() {
 	InitUserIDTable();
 	InitSpaceIDTable();
@@ -71,11 +74,13 @@ char* InsertProfileDescription(char* username, char* display_name) {
 char* GetProfileDescription(char* username) {
 	return g_hash_table_lookup(desctt, username);
 }
-char* InsertPfpPath(char* username, char* display_name) {
-	g_hash_table_insert(pfpmap, username, display_name);
+
+void InsertPfpPath(char* id, char* path) {
+	g_hash_table_replace(pfpmap, g_strdup(id), g_strdup(path));
 }
-char* GetPfpPath(char* username) {
-	return g_hash_table_lookup(pfpmap, username);
+
+char* GetPfpPath(char* id) {
+	return g_hash_table_lookup(pfpmap, id);
 }
 static int nextmsgid = 0;
 
