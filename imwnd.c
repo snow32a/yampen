@@ -822,7 +822,7 @@ static void BuildChannelTree(GtkWidget* parent_box, YampChannel* channels,
 	}
 	for (int i = 0; i < nchannels; i++) {
 		YampChannel* ch = &channels[i];
-		gboolean is_category = ch->type == 1;
+		gboolean is_category = ch->type == YAMP_SPACE_CATEGORY;
 
 		if (is_category) {
 			current_listbox = NULL;

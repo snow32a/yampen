@@ -1,11 +1,19 @@
 #pragma once
 #include <glib.h>
-#define YAMP_DM 0
-#define YAMP_GC 1
-#define YAMP_SPACE_TEXT 40
-#define YAMP_SPACE_CATEGORY 41
-#define YAMP_SPACE_ANNOUNCEMENT 42
-#define YAMP_SPACE_INDEX 43
+#define YAMP_DM                 0
+#define YAMP_GC                 1
+
+#define YAMP_FAMILY_SPACE       (1 << 8)
+#define YAMP_FAMILY_MASK        0xFF00
+#define YAMP_SUBTYPE_MASK       0x00FF
+
+#define YAMP_SPACE_TEXT         (YAMP_FAMILY_SPACE | 0)
+#define YAMP_SPACE_CATEGORY     (YAMP_FAMILY_SPACE | 1)
+#define YAMP_SPACE_ANNOUNCEMENT (YAMP_FAMILY_SPACE | 2)
+#define YAMP_SPACE_INDEX        (YAMP_FAMILY_SPACE | 3)
+
+#define YAMP_IS_SPACE_TYPE(t)   (((t) & YAMP_FAMILY_MASK) == YAMP_FAMILY_SPACE)
+
 #ifdef _WIN32
 #include <windows.h>
 #include <winsock2.h>
