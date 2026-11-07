@@ -8,7 +8,6 @@
 #include "protocol/yamp.h"
 #include "message.h"
 #include <curl/curl.h>
-#include "hmap/hashmap.h"
 #include "chatwnd.h"
 #include "imwnd.h"
 #include <pthread.h>
