@@ -1,0 +1,4 @@
+yampen
+build/*
+publish.sh
+assets.c

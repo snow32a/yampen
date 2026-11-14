@@ -1,0 +1,79 @@
+.avatar {
+    border-radius: 50%;
+}
+
+.channel-category{
+    padding-top: 5px;
+}
+
+.channel-row{
+    border-radius:8px;
+}
+
+.channel-row:selected{
+    background-color: #f25858ff;
+    color:#404040;
+}
+.button.emoji-sel{
+    background-color: #f25858ff;
+    color:#404040;
+}
+
+.h1 { font-size: 2em;    font-weight: bold; }
+.h2 { font-size: 1.5em;  font-weight: bold; }
+.h3 { font-size: 1.17em; font-weight: bold; }
+.h4 { font-size: 1em;    font-weight: bold; }
+.h5 { font-size: 0.83em; font-weight: bold; }
+.h6 { font-size: 0.67em; font-weight: bold; }
+
+
+.toptabs{
+    border-radius:8px;
+    padding:8px;
+}
+.toptabs:selected{
+    background-color: #f25858ff;
+    color:#404040;
+}
+
+.bold{
+    font-weight:bold;
+}
+.italic{
+    font-style:italic;
+}
+.underline{
+    text-decoration:underline;
+}
+.overline{
+    text-decoration:overline;
+}
+.strike{
+    text-decoration:line-through;
+}
+.monospace{
+    font-family:monospace;
+}
+.inline-code{
+    background-color:rgba(0,0,0,0.1);
+    color:#C0C0C0;
+}
+.spoiler{
+    background-color: #404040;
+    color:transparent;
+}
+.reply_border{
+    background-color: #c0c0c0;
+}
+.reply_body{
+    padding: 5px;
+    background-color: #c0c0c020;
+}
+.attachment{
+    border-radius: 5px;
+}
+.attachment-box{
+    border-radius: 10px;
+    padding: 10px;
+    background-color: #00000020;
+}

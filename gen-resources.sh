@@ -1,0 +1,18 @@
+{
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo '<gresources>'
+    echo '  <gresource prefix="/org/yampen">'
+    echo '  <file>assets/icons/hicolor/scalable/symbolic/dms-symbolic.svg</file>'
+    echo '  <file>assets/icons/hicolor/scalable/symbolic/insert-symbolic.svg</file>'
+    echo '  <file>assets/icons/hicolor/scalable/symbolic/invite-symbolic.svg</file>'
+    echo '  <file>assets/icons/hicolor/scalable/symbolic/text-channel-symbolic.svg</file>'
+    echo '  <file>assets/styles.css</file>'
+    echo '  <file>assets/pfps/default0.png</file>'
+    echo '  <file>assets/pfps/default1.png</file>'
+    echo '  <file>assets/pfps/default2.png</file>'
+    echo '  <file>assets/pfps/default3.png</file>'
+    echo '  <file>assets/pfps/default4.png</file>'
+    find assets/twemoji/assets/72x72 -type f -name '*.png' -printf '    <file>%p</file>\n'
+    echo '  </gresource>'
+    echo '</gresources>'
+} > assets.gresource.xml
