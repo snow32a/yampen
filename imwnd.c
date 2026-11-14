@@ -83,6 +83,7 @@ GtkWidget* chattitle;
 GtkWidget* typingindicator;
 GtkWidget* replyindicator;
 GtkWidget* AttachementsBox;
+GtkWidget* memberlist = NULL;
 
 YampChannel* currentChannel = NULL;
 int isReplying = 0;
@@ -380,6 +381,7 @@ void BuildMemberList(MemberSet* set) {
 	gtk_box_append(GTK_BOX(suvbox), hdr);
 
 	GtkWidget* list = gtk_list_box_new();
+	memberlist = list;
 	gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_NONE);
 
 	for (int i = 0; i < set->n; i++) {
@@ -455,6 +457,7 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	int type = (int)g_object_get_data(G_OBJECT(child), "type");
 	LastTypedAt = 0;
 	if (type == YAMP_DM) {
+		memberlist = NULL;
 		BuildUserProfile(
 			GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
 		MembersListShown = 0;
@@ -990,44 +993,43 @@ static const char* StatusToColor(const char* statusStr) {
 	return "808080";
 }
 
-static gboolean MainThreadStatusCB(gpointer data) {
-	StatusUpdatePayload* payload = data;
-
-	if (!listmode) {
-		free(payload->id);
-		free(payload);
-		return G_SOURCE_REMOVE;
-	}
-
-	for (GtkWidget* row = gtk_widget_get_first_child(dmlist); row;
+void UpdateFrameInList(GtkWidget* listbox, const char* id, const char* color,
+					   gboolean frame_first) {
+	for (GtkWidget* row = gtk_widget_get_first_child(listbox); row;
 		 row = gtk_widget_get_next_sibling(row)) {
-		GtkWidget* itemBox = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
-		GtkWidget* pfp = gtk_widget_get_first_child(itemBox);
-		if (!pfp)
+		GtkWidget* box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
+		GtkWidget* frame = gtk_widget_get_first_child(box);
+		if (!frame)
 			continue;
-		GtkWidget* label = gtk_widget_get_next_sibling(pfp);
-		if (!label)
-			continue;
-
-		const char* rowUsername = g_object_get_data(G_OBJECT(label), "id");
-		if (rowUsername && strcmp(rowUsername, payload->id) == 0) {
-			const char* color = StatusToColor(payload->stat->status);
-			GtkCssProvider* provider = gtk_css_provider_new();
-			char style[64];
-			snprintf(style, sizeof(style),
-					 "image { border: 2px solid #%s; -gtk-icon-size: 32px; }",
-					 color);
-			gtk_css_provider_load_from_string(provider, style);
-			gtk_style_context_add_provider(
-				gtk_widget_get_style_context(pfp), GTK_STYLE_PROVIDER(provider),
-				GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-			break;
+		const char* rid = g_object_get_data(G_OBJECT(frame), "user-id");
+		if (rid && strcmp(rid, id) == 0) {
+			SetStatusFrameColor(frame, color);
+			return;
 		}
 	}
+}
 
-	free(payload->id);
-	FreeStatusObject(payload->stat);
-	free(payload);
+gboolean MainThreadStatusCB(gpointer data) {
+	StatusUpdatePayload* p = data;
+	const char* st = p->stat->status ? p->stat->status : "offline";
+	const char* color = StatusToColor(st);
+
+	YampUser* u = GetUserObject(p->id);
+	if (u) {
+		if (u->status) FreeStatusObject(u->status);
+		u->status = DupStatusObject(p->stat);
+	}
+
+	if (listmode && dmlist)
+		UpdateFrameInList(dmlist, p->id, color, TRUE);
+	if (MembersListShown && memberlist)
+		UpdateFrameInList(memberlist, p->id, color, TRUE);
+	if (curUserID && strcmp(p->id, curUserID) == 0)
+		SetStatusFrameColor(SelfPfpFrame, color);
+
+	free(p->id);
+	FreeStatusObject(p->stat);
+	free(p);
 	return G_SOURCE_REMOVE;
 }
 
@@ -1631,6 +1633,9 @@ static gboolean receive_im_main_thread(gpointer user_data) {
 		if (!usr) {
 			return G_SOURCE_REMOVE;
 		}
+
+		TypingRemove(usr->id);
+
 		char* dispname = usr->displayname ? usr->displayname : usr->username;
 		if (payload->nonce != -1) {
 			GtkWidget* silhouette = GetMessageSilhouettes(payload->nonce);
@@ -1904,17 +1909,18 @@ int ProfileUpdateMainThread(YampUser* new_profile) {
 			free(url);
 			InsertPfpPath(new_profile->id, pfp_path);
 
-			if(strcmp(new_profile->id,curUserID)==0){
+			if (strcmp(new_profile->id, curUserID) == 0) {
 				char* dpyname = new_profile->displayname
-													 ? new_profile->displayname
-													 : new_profile->username;
-				char dpyname_suffixed[strlen(dpyname)+6];
-				sprintf(dpyname_suffixed, "%s (you)",dpyname);
+									? new_profile->displayname
+									: new_profile->username;
+				char dpyname_suffixed[strlen(dpyname) + 6];
+				sprintf(dpyname_suffixed, "%s (you)", dpyname);
 				gtk_label_set_text(GTK_LABEL(label), dpyname_suffixed);
 			} else {
-				gtk_label_set_text(GTK_LABEL(label), new_profile->displayname
-													 ? new_profile->displayname
-													 : new_profile->username);
+				gtk_label_set_text(GTK_LABEL(label),
+								   new_profile->displayname
+									   ? new_profile->displayname
+									   : new_profile->username);
 			}
 		}
 	}
