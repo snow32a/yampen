@@ -11,7 +11,7 @@ extern GtkWidget* chatarea;
 void ScrollChatToBottom(void);
 extern GtkWidget* replyindicator;
 extern int isReplying;
-extern char* ReplyingToMsg;
+extern YampMessage* ReplyingToMsg; // YampMessage is already a nice container to store content, id and author here, for ChatView to use
 extern AttachementEntry* curAttachements;
 extern GtkWidget* AttachementsBox;
 void LoadAvatarAsync(GtkWidget* image, const char* url,

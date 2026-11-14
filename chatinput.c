@@ -7,8 +7,8 @@
 #include "chatwnd.h"
 int LastTypedAt = 0;
 typedef struct {
-	YampMessage msg;
-	YampMessage reply;
+	YampMessage* msg;
+	YampMessage* reply;
 	int nonce;
 	int pending;
 	char channel[34];
@@ -20,14 +20,14 @@ typedef struct {
 } UploadCtx;
 
 void FinishSend(PendingSend* ps) {
-	YAMPSendMessage(mainsock, ps->channel, &ps->msg, ps->nonce, NULL);
-	for (int i = 0; i < ps->msg.nAttachments; i++) {
-		free((gchar*)ps->msg.attachments[i]->url);
-		free((gchar*)ps->msg.attachments[i]->mime);
-		free((gchar*)ps->msg.attachments[i]->filename);
+	YAMPSendMessage(mainsock, ps->channel, ps->msg, ps->nonce, NULL);
+	for (int i = 0; i < ps->msg->nAttachments; i++) {
+		free((gchar*)ps->msg->attachments[i]->url);
+		free((gchar*)ps->msg->attachments[i]->mime);
+		free((gchar*)ps->msg->attachments[i]->filename);
 	}
-	free(ps->msg.attachments);
-	free((gchar*)ps->msg.content);
+	free(ps->msg->attachments);
+	free((gchar*)ps->msg->content);
 	free(ps);
 	curAttachements = NULL;
 }
@@ -100,15 +100,16 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 			*last = '\0';
 		}
 		PendingSend* ps = calloc(1, sizeof(*ps));
-		if (isReplying)
-			strcpy(ps->reply.id, ReplyingToMsg);
-		ps->msg.content = strdup(first); // content is freed below
-		ps->msg.author = GetUserObject(curUserID);
-		ps->msg.reply = isReplying ? &ps->reply : NULL;
-		ps->msg.timestamp = time(NULL);
+		ps->msg = malloc(sizeof(YampMessage));
+		*ps->msg = (YampMessage){0};
+		ps->reply = ReplyingToMsg;
+		ps->msg->content = strdup(first); // content is freed below
+		ps->msg->author = GetUserObject(curUserID);
+		ps->msg->reply = isReplying ? ps->reply : NULL;
+		ps->msg->timestamp = time(NULL);
 		strncpy(ps->channel, currentChannel->id, sizeof(ps->channel) - 1);
 
-		GtkWidget* msgrow = PushUIMessage(chatscroll, chatarea, &ps->msg, 1);
+		GtkWidget* msgrow = PushUIMessage(chatscroll, chatarea, ps->msg, 1);
 		ScrollChatToBottom();
 		ps->nonce = RegisterMessageSilhouette(msgrow);
 
@@ -119,8 +120,8 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 		if (n == 0) {
 			FinishSend(ps);
 		} else {
-			ps->msg.attachments = calloc(n, sizeof(YampAttachment*));
-			ps->msg.nAttachments = n;
+			ps->msg->attachments = calloc(n, sizeof(YampAttachment*));
+			ps->msg->nAttachments = n;
 			ps->pending = n;
 
 			int i = 0;
@@ -146,7 +147,7 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 					mime = strdup("application/octet-stream");
 
 				YampAttachment* att = calloc(1, sizeof *att);
-				ps->msg.attachments[i] = att;
+				ps->msg->attachments[i] = att;
 				att->mime = mime;
 				att->filename = strdup(basename);
 

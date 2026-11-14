@@ -209,6 +209,8 @@ void FreeMessageObject(YampMessage* msg);
 
 // attachment object helpers
 YampAttachment* DupAttachmentObject(YampAttachment* attachment);
+void FreeAttachmentTypeFields(YampAttachment* attach);
+void FreeAttachmentObject(YampAttachment* attach);
 
 // user object helpers
 void FreeUserObject(YampUser* u);

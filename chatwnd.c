@@ -300,8 +300,8 @@ void PushAttachments(GtkWidget* msgvbox, YampMessage* msg) {
 			f->pic = g_object_ref(pic);
 			g_thread_unref(g_thread_new("attach", AttachFetchThread, f));
 		} else {
-			char* name = msg->attachments[i]->filename
-							 ? msg->attachments[i]->filename
+			char* name = strdup(msg->attachments[i]->filename)
+							 ? strdup(msg->attachments[i]->filename)
 							 : g_path_get_basename(msg->attachments[i]->url);
 			char* q = strchr(name, '?');
 			if (q)
@@ -341,7 +341,6 @@ void PushAttachments(GtkWidget* msgvbox, YampMessage* msg) {
 			gtk_box_append(GTK_BOX(attachmentbox), download_btn);
 			gtk_box_append(GTK_BOX(msgvbox), attachmentbox);
 			g_free(name);
-			free(url);
 		}
 	}
 }
@@ -529,16 +528,38 @@ void HandleMsgContextMenu(GtkGestureClick* gesture, int n_press, double x,
 	gtk_widget_set_halign(GTK_WIDGET(pop), GTK_ALIGN_START);
 	gtk_popover_popup(pop);
 }
+
+void ClearReply(void) {
+	FreeMessageObject(ReplyingToMsg);
+	isReplying = 0;
+	if (replyindicator)
+		gtk_widget_set_visible(replyindicator, 0);
+}
+
 void ReplyCallback(GSimpleAction* action, GVariant* parameter,
 				   gpointer user_data) {
-	gtk_widget_set_visible(replyindicator, 1);
-	char* lbltext =
-		malloc(17 + strlen(g_object_get_data(user_data, "dispname")));
-	sprintf(lbltext, "Reply to <b>%s</b>",
-			g_object_get_data(user_data, "dispname"));
-	gtk_label_set_markup(GTK_LABEL(replyindicator), lbltext);
-	ReplyingToMsg = g_object_get_data(user_data, "msgid");
+	GObject* row = G_OBJECT(user_data);
+	const char* msgid = g_object_get_data(row, "msgid");
+	const char* userid = g_object_get_data(row, "userid");
+	const char* dispname = g_object_get_data(row, "dispname");
+	const char* content = g_object_get_data(row, "content");
+
+	ClearReply();
+
+	ReplyingToMsg = malloc(sizeof(*ReplyingToMsg));
+	*ReplyingToMsg = (YampMessage){0};
+	ReplyingToMsg->author = malloc(sizeof(YampUser));
+	strncpy(ReplyingToMsg->id, msgid, sizeof(ReplyingToMsg->id) - 1);
+	strncpy(ReplyingToMsg->author->id, userid, sizeof(ReplyingToMsg->author->id) - 1);
+	ReplyingToMsg->author->displayname = strdup(dispname ? dispname : "Unknown");
+	ReplyingToMsg->content = strdup(content ? content : "");
 	isReplying = 1;
+
+	char* lbltext = g_markup_printf_escaped("Reply to <b>%s</b>",
+											ReplyingToMsg->author->displayname);
+	gtk_label_set_markup(GTK_LABEL(replyindicator), lbltext);
+	g_free(lbltext);
+	gtk_widget_set_visible(replyindicator, 1);
 }
 void DeleteCallback(GSimpleAction* action, GVariant* parameter,
 					gpointer user_data) {
@@ -585,7 +606,8 @@ void DrawReplyCurve(GtkDrawingArea* area, cairo_t* cr, int width, int height,
 void DeleteUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea, char* id) {
 	for (GtkWidget* msg = gtk_widget_get_first_child(chatarea); msg;
 		 msg = gtk_widget_get_next_sibling(msg)) {
-		if (strcmp(g_object_get_data(G_OBJECT(msg), "msgid"), id) == 0) {
+		const char* mid = g_object_get_data(G_OBJECT(msg), "msgid");
+		if (mid && strcmp(mid, id) == 0) {
 			gtk_list_box_remove(GTK_LIST_BOX(chatarea), msg);
 			return;
 		}

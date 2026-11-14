@@ -1,0 +1,18 @@
+# List of features to bring to YAMP
+## C = Client, S = Server (yampd) CS = Client & Server
+[ ] Space icons and settings (CS)
+[ ] Custom emojis in spaces (CS)
+[ ] HTTP invites (S)
+[ ] Ping sounds (C)
+[ ] Setting status (C)
+[ ] Space roles (CS)
+[ ] Mentions (CS)
+[ ] Fix of links & selection (C)
+[ ] Upload status (C)
+[ ] GIF embeds and selector (c)
+[ ] Video embeds (C)
+[ ] Editing GCs (C)
+[ ] Adding and removing people in GCs (C)
+[ ] Calls (CS)
+[ ] E2EE (CS)
+[ ] OpenCAPTCHA (CS)

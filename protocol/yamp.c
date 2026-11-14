@@ -426,10 +426,29 @@ void YampChannelFree(YampChannel* ch) {
 	ch->people = NULL;
 	ch->npeople = 0;
 }
-void FreeMessageObject(YampMessage* msg) {
+
+void FreeMessageFields(YampMessage* msg) {
+	if (!msg)
+		return;
+	FreeUserObject(msg->author);
 	free(msg->content);
-	if (msg->reply)
+	msg->content = NULL;
+	if (msg->reply) {
 		FreeMessageObject(msg->reply);
+		msg->reply = NULL;
+	}
+	for (int i = 0; i < msg->nAttachments; i++) {
+		FreeAttachmentObject(msg->attachments[i]);
+	}
+	free(msg->attachments);
+	msg->attachments = NULL;
+	msg->nAttachments = 0;
+}
+
+void FreeMessageObject(YampMessage* msg) {
+	if (!msg)
+		return;
+	FreeMessageFields(msg);
 	free(msg);
 }
 cJSON* CreateAttachmentJSON(YampAttachment* attachment) {

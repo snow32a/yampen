@@ -87,7 +87,7 @@ GtkWidget* memberlist = NULL;
 
 YampChannel* currentChannel = NULL;
 int isReplying = 0;
-char* ReplyingToMsg = NULL;
+YampMessage* ReplyingToMsg = NULL;
 
 typedef struct {
 	char* id;
@@ -1011,6 +1011,7 @@ void UpdateFrameInList(GtkWidget* listbox, const char* id, const char* color,
 
 gboolean MainThreadStatusCB(gpointer data) {
 	StatusUpdatePayload* p = data;
+	printf("%s stat | %s userid",p->stat->status,p->id);
 	const char* st = p->stat->status ? p->stat->status : "offline";
 	const char* color = StatusToColor(st);
 
