@@ -51,14 +51,14 @@ void onYAMPTyping(YampUser* usr, char* channel);
 void onYAMPUserDetailsFetched(cJSON* Details);
 
 /* Friends / conversations */
-void onYAMPFriendRequestReceived(char* username);
+void onYAMPFriendRequestReceived(YampUser* usr);
 void onYAMPFriendReqSent(int success);
 void onYAMPFriendReqResolved(char* username, int success);
 void onYAMPNewFriend(YampUser* friend);
 void onYAMPNewConversation(YampChannel* conv);
 void onYAMPFriendsListed(YampUser* friends, int nfriends);
 
-
+// probably should make an imwnd_globals.c some time later
 char* curUserID;
 GQueue MessageStack = G_QUEUE_INIT;
 GtkWidget* main_window;
@@ -120,6 +120,7 @@ static size_t file_write_cb(char* ptr, size_t size, size_t nmemb,
 static gboolean onUIDisconnected(gpointer none) {
 	GtkAlertDialog* alert = gtk_alert_dialog_new("Server disconnected!");
 	gtk_alert_dialog_show(alert, NULL);
+	gtk_window_destroy(GTK_WINDOW(main_window));
 	DisplayLoginDialog(global_app);
 	return G_SOURCE_REMOVE;
 }
@@ -1293,13 +1294,10 @@ int CreateFQNotification(YampUser* usr) {
 	gtk_box_append(GTK_BOX(btnbox), denybtn);
 	payload->notif = CreateClientNotification(notifoverlay, txt, btnbox);
 	free(txt);
+	FreeUserObject(usr);
 }
-void onYAMPFriendRequestReceived(char* id) {
-	YampUser usr;
-	usr.displayname = id;
-	usr.username = id;
-	strcpy(usr.id, id);
-	CreateFQNotification(&usr);
+void onYAMPFriendRequestReceived(YampUser* usr) {
+	CreateFQNotification(DupUserObject(usr));
 }
 void onYAMPFriendReqSent(int success) {}
 void onYAMPFriendReqResolved(char* username, int success) {}

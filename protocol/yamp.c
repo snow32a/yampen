@@ -286,7 +286,7 @@ cJSON* CreateUserJSON(YampUser* user) {
 	cJSON_AddStringToObject(obj, "description", user->description);
 	cJSON_AddStringToObject(obj, "avatar", user->pfp);
 
-	if(user->status){
+	if (user->status) {
 		cJSON* status_obj = CreateStatusJSON(user->status);
 		cJSON_AddItemToObject(obj, "status", status_obj);
 	}
@@ -886,12 +886,17 @@ void* YAMPRecvLoop(void* fd) {
 					FreeStatusObject(status);
 
 				} else if (strcmp(eventname, "IncomingFriendReq") == 0) {
-					char* from = JsonStrOrNull(eventdata, "from");
-
-					for (YampEventListener* l = EventListeners; l;
-						 l = l->next) {
-						if (l->onFriendRequestReceived)
-							l->onFriendRequestReceived(from);
+					cJSON* from = cJSON_GetObjectItem(eventdata, "user");
+					if (from) {
+						YampUser* user = ParseUserJSON(from);
+						if (user) {
+							for (YampEventListener* l = EventListeners; l;
+								 l = l->next) {
+								if (l->onFriendRequestReceived)
+									l->onFriendRequestReceived(user);
+							}
+							FreeUserObject(user);
+						}
 					}
 
 				} else if (strcmp(eventname, "UpdatedChannels") == 0) {
@@ -1006,9 +1011,8 @@ void* YAMPRecvLoop(void* fd) {
 					}
 
 					FreeUserObject(user);
-				} else if(strcmp(eventname,"ProfileUpdate") == 0){
-					YampUser* user =
-						ParseUserJSON(eventdata);
+				} else if (strcmp(eventname, "ProfileUpdate") == 0) {
+					YampUser* user = ParseUserJSON(eventdata);
 
 					for (YampEventListener* l = EventListeners; l;
 						 l = l->next) {

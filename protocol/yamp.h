@@ -115,7 +115,7 @@ typedef void YAMPChannelsUpdatedFn(YampChannel* channels, int n, char* space);
 
 typedef void YAMPDisconnectedFn(void);
 typedef void YAMPStatusUpdateFn(char* name, YampStatus* stat);
-typedef void YAMPFriendRequestReceivedFn(char* username);
+typedef void YAMPFriendRequestReceivedFn(YampUser* user);
 typedef void YAMPFriendReqSentFn(int success);
 typedef void YAMPFriendReqResolvedFn(char* username, int success);
 typedef void YAMPReceiveIMFn(YampMessage* msg, int nonce);
