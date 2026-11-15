@@ -1,33 +1,29 @@
-# List of features to bring to YAMP
-## C = Client, S = Server (yampd) CS = Client & Server
-[ ] Space icons and settings (CS)
+## Roadmap
 
-[ ] Custom emojis in spaces (CS)
+*C = client, S = server (yampd), P = protocol/both*
+Will get implemented in unordered ways
 
-[ ] HTTP invites (S)
+### Spaces
+- [ ] Space icons and settings (P)
+- [ ] Space roles (P)
+- [ ] Custom emojis in spaces (P)
+- [ ] HTTP invites (S)
 
-[ ] Ping sounds (C)
+### Messaging
+- [ ] Mentions (P)
+- [ ] Editing group chats (C)
+- [ ] Adding and removing people in group chats (C)
+- [ ] GIF embeds and selector (C)
+- [ ] Video embeds (C)
+- [ ] Upload status (C)
+- [ ] Fix links and text selection (C)
 
-[ ] Setting status (C)
+### Presence and notifications
+- [ ] Setting status (C)
+- [ ] Ping sounds (C)
 
-[ ] Space roles (CS)
-
-[ ] Mentions (CS)
-
-[ ] Fix of links & selection (C)
-
-[ ] Upload status (C)
-
-[ ] GIF embeds and selector (c)
-
-[ ] Video embeds (C)
-
-[ ] Editing GCs (C)
-
-[ ] Adding and removing people in GCs (C)
-
-[ ] Calls (CS)
-
-[ ] E2EE (CS)
-
-[ ] OpenCAPTCHA (CS)
+### Big features
+- [ ] Calls (P)
+- [ ] E2EE (P)
+- [ ] OpenCAPTCHA (P)
+- [ ] Federation between yampd instances (S)
