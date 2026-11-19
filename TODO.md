@@ -11,8 +11,6 @@ Will get implemented in unordered ways
 
 ### Messaging
 - [ ] Mentions (P)
-- [ ] Editing group chats (C)
-- [ ] Adding and removing people in group chats (C)
 - [ ] GIF embeds and selector (C)
 - [ ] Video embeds (C)
 - [ ] Upload status (C)

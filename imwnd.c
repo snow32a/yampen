@@ -33,8 +33,8 @@ void onYAMPSpacesFetched(YampSpace* spaces, int nspaces);
 void onYAMPNewSpace(YampSpace space);
 
 /* Channels */
-void onYAMPChannelsFetched(YampChannel* channels, int nchannels);
-void onYAMPChannelsUpdated(YampChannel* channels, int n, char* space);
+void onYAMPChannelsFetched(YampChannel** channels, int nchannels);
+void onYAMPChannelsUpdated(YampChannel** channels, int n, char* space);
 void onYAMPChannelJoined(YampUser* user, char* channel_id);
 void onYAMPChannelLeave(YampUser* user, char* channel_id);
 
@@ -125,7 +125,7 @@ static gboolean onUIDisconnected(gpointer none) {
 	return G_SOURCE_REMOVE;
 }
 
-YampChannel* cached_convs = NULL;
+YampChannel** cached_convs = NULL;
 int ncached_convs = 0;
 YampUser** cached_friends = NULL;
 int ncached_friends = 0;
@@ -499,6 +499,7 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		if (members) {
 			BuildMemberList(members);
 		}
+		printf("%s\n", currentChannel->id);
 		YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
 							  onYAMPMessageHistoryLoaded);
 		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
@@ -643,7 +644,7 @@ void onYAMPNewSpace(YampSpace space) {
 }
 
 typedef struct {
-	YampChannel* channels;
+	YampChannel** channels;
 	int nchannels;
 } ChannelFetchPayload;
 typedef struct {
@@ -831,14 +832,14 @@ static void OnCategoryToggle(GtkGestureClick* gesture, int n_press, double x,
 	gtk_label_set_text(GTK_LABEL(toggle_label), visible ? "+" : "-");
 }
 
-static void BuildChannelTree(GtkWidget* parent_box, YampChannel* channels,
+static void BuildChannelTree(GtkWidget* parent_box, YampChannel** channels,
 							 int nchannels, int depth, GtkWidget* root_box) {
 	GtkWidget* current_listbox = NULL;
 	if (!channels) {
 		return;
 	}
 	for (int i = 0; i < nchannels; i++) {
-		YampChannel* ch = &channels[i];
+		YampChannel* ch = channels[i];
 		gboolean is_category = ch->type == YAMP_SPACE_CATEGORY;
 
 		if (is_category) {
@@ -959,20 +960,20 @@ int MainThreadChannelCB(gpointer data) {
 	free(data);
 	return G_SOURCE_REMOVE;
 }
-void onYAMPChannelsFetched(YampChannel* channels, int nchannels) {
+void onYAMPChannelsFetched(YampChannel** channels, int nchannels) {
 	ChannelFetchPayload* cfp = malloc(sizeof(ChannelFetchPayload));
 	cfp->nchannels = nchannels;
 	cfp->channels = channels;
 	g_idle_add(MainThreadChannelCB, cfp);
 }
-void onYAMPChannelsUpdated(YampChannel* channels, int n, char* space) {
+void onYAMPChannelsUpdated(YampChannel** channels, int n, char* space) {
 	if (!curSpace || !space || strcmp(space, curSpace) != 0)
 		return;
 	ChannelFetchPayload* cfp = malloc(sizeof(ChannelFetchPayload));
 	cfp->nchannels = n;
-	cfp->channels = malloc(sizeof(YampChannel) * (n ? n : 1));
+	cfp->channels = malloc(sizeof(YampChannel*) * (n ? n : 1));
 	for (int i = 0; i < n; i++)
-		cfp->channels[i] = DupChannelObject_Inline(&channels[i]);
+		cfp->channels[i] = DupChannelObject(channels[i]);
 	g_idle_add(MainThreadChannelCB, cfp);
 }
 typedef struct {
@@ -1012,13 +1013,14 @@ void UpdateFrameInList(GtkWidget* listbox, const char* id, const char* color,
 
 gboolean MainThreadStatusCB(gpointer data) {
 	StatusUpdatePayload* p = data;
-	printf("%s stat | %s userid",p->stat->status,p->id);
+	printf("%s stat | %s userid", p->stat->status, p->id);
 	const char* st = p->stat->status ? p->stat->status : "offline";
 	const char* color = StatusToColor(st);
 
 	YampUser* u = GetUserObject(p->id);
 	if (u) {
-		if (u->status) FreeStatusObject(u->status);
+		if (u->status)
+			FreeStatusObject(u->status);
 		u->status = DupStatusObject(p->stat);
 	}
 
@@ -1074,9 +1076,9 @@ char* JoinUsernames(YampUser** people, int n) {
 	*p = '\0';
 	return out;
 }
-int InsertConvIntoList(YampChannel conv) {
-	if (conv.type == YAMP_DM) {
-		YampUser** members = conv.people;
+int InsertConvIntoList(YampChannel* conv) {
+	if (conv->type == YAMP_DM) {
+		YampUser** members = conv->people;
 		YampUser* usr; // the other user
 		if (strcmp(members[0]->id, curUserID) == 0) {
 			usr = members[1];
@@ -1114,27 +1116,30 @@ int InsertConvIntoList(YampChannel conv) {
 							   g_strdup(usr->id), g_free);
 		g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
 		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
-						  DupChannelObject(&conv));
+						  DupChannelObject(conv));
 		g_object_set_data_full(G_OBJECT(LBRowLabel), "dpyname",
 							   g_strdup(dispname), g_free);
-		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
+		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv->type);
 		gtk_box_append(GTK_BOX(ItemBox), statusframe);
 		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
 		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
 		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
 		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
-	} else if (conv.type == YAMP_GC) {
-		YampUser** members = conv.people;
+	} else if (conv->type == YAMP_GC) {
+		YampUser** members = conv->people;
 		char* dispname =
-			conv.name ? conv.name : JoinUsernames(members, conv.npeople);
+			conv->name ? conv->name : JoinUsernames(members, conv->npeople);
 		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 		GtkWidget* LBRow = gtk_list_box_row_new();
 		GtkWidget* LBRowLabel = gtk_label_new(dispname);
 		GtkWidget* Pfp;
-		char pfppath[37];
-		sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
-				GetDefaultPfp(conv.id));
-		Pfp = gtk_image_new_from_resource(pfppath);
+		if (conv->icon) {
+		} else {
+			char pfppath[37];
+			sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
+					GetDefaultPfp(conv->id));
+			Pfp = gtk_image_new_from_resource(pfppath);
+		}
 
 		GtkCssProvider* provider = gtk_css_provider_new();
 		char style[60];
@@ -1144,12 +1149,11 @@ int InsertConvIntoList(YampChannel conv) {
 									   GTK_STYLE_PROVIDER(provider),
 									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
-						  DupChannelObject(&conv));
-		g_object_set_data(G_OBJECT(LBRowLabel), "id",
-						  strdup(ParseGCChannel(conv.id)));
-		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv.type);
+						  DupChannelObject(conv));
+		g_object_set_data(G_OBJECT(LBRowLabel), "id", strdup(conv->id));
+		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv->type);
 		g_object_set_data_full(G_OBJECT(LBRowLabel), "members",
-							   MemberSetCopy(conv.people, conv.npeople),
+							   MemberSetCopy(conv->people, conv->npeople),
 							   MemberSetFree);
 		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
 		gtk_box_append(GTK_BOX(ItemBox), Pfp);
@@ -1576,7 +1580,7 @@ void onYAMPNewFriend(YampUser* friend) {
 	g_idle_add(MainThreadNewFriend, heapfriend);
 }
 gboolean MainThreadNewConversation(YampChannel* heapconv) {
-	InsertConvIntoList(*heapconv);
+	InsertConvIntoList(heapconv);
 	free(heapconv);
 	return G_SOURCE_REMOVE;
 }

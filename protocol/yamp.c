@@ -29,7 +29,7 @@ typedef void (*YampFriendsListedCb)(YampUser** friends, int nfriends);
 typedef void (*YampLoginResultCb)(char* token, int success);
 typedef void (*YampRegisterResultCb)(char* token, int success);
 typedef void (*YampAuthCb)(YampLoginData* payload);
-typedef void (*YampChannelsFetchedCb)(YampChannel* channels, int n);
+typedef void (*YampChannelsFetchedCb)(YampChannel** channels, int n);
 typedef void (*YampMessageHistoryCb)(YampMessage** msgs, int nmsgs,
 									 int hasmore);
 typedef void (*YampFriendReqSentCb)(int success);
@@ -111,60 +111,6 @@ char* MakeDMChannel(const char* a, const char* b) {
 		return g_strdup_printf("%s|%s", a, b);
 	else
 		return g_strdup_printf("%s|%s", b, a);
-}
-char* MakeGCChannel(const char* a) {
-	char* ret = malloc(strlen(a) + 2);
-	strcpy(ret + 1, a);
-	ret[0] = '&';
-	return ret;
-}
-const char* ParseGCChannel(const char* a) { return a + 1; }
-
-////////////////////////////////////////////////
-///      YAMP'S WHERE PARAMETER STYLE        ///
-/// SPACES:     DMs:                GCs:     ///
-/// #channel    userID1-userID2     &GC      ///
-////////////////////////////////////////////////
-int YAMPProcessWhere(char* where, char* curUserID, chat* out) {
-	chat retval = {0};
-	if (*where == '&') {
-		// Group chat
-		retval.GC_ID = strdup(where + 1);
-		retval.OtherGuy = NULL;
-		retval.type = YAMP_GC;
-		retval.where = strdup(where);
-		*out = retval;
-		return TRUE;
-	} else {
-		// Could be a damn DM?
-		char* firstUsr = strdup(where);
-		char* minus = strchr(firstUsr, '|');
-		if (!minus) {
-			// This means it's a space channel!
-			free(firstUsr);
-			retval.GuildName = NULL; // long deprecated sorry
-			retval.ChannelName = strdup(where);
-			retval.OtherGuy = NULL;
-			retval.type = YAMP_SPACE_TEXT;
-			retval.where = strdup(where);
-			*out = retval;
-			return TRUE;
-		}
-		*minus = '\0';
-		retval.ChannelName = NULL;
-		retval.type = YAMP_DM;
-		retval.where = strdup(where);
-		if (strcmp(firstUsr, curUserID) == 0) {
-			retval.OtherGuy = minus + 1;
-		} else if (strcmp(minus + 1, curUserID) == 0) {
-			retval.OtherGuy = firstUsr;
-		} else {
-			return FALSE; // who the FUCK are you
-		}
-		retval.GuildName = NULL;
-		*out = retval;
-		return TRUE;
-	}
 }
 
 int TLSYAMPSend(SSL* fd, void* payload, uint32_t size) {
@@ -337,94 +283,121 @@ YampUser* ParseUserJSON(cJSON* rawusr) {
 	return DupUserObject(&usr);
 }
 
-YampChannel RecursiveParseChannel(cJSON* raw) {
-	YampChannel ret = {0};
-	cJSON* pos = cJSON_GetObjectItem(raw, "position");
-	if (pos) {
-		ret.pos = pos->valueint;
-	}
-	ret.type = cJSON_GetObjectItem(raw, "type")->valueint;
-	cJSON* name = cJSON_GetObjectItem(raw, "name");
-	if (name) {
-		ret.name = dup0(name->valuestring);
-	}
-	strcpy(ret.id, cJSON_GetObjectItem(raw, "id")->valuestring);
-	cJSON* children = cJSON_GetObjectItem(raw, "children");
-	if (children) {
-		ret.children =
-			malloc(cJSON_GetArraySize(children) * sizeof(YampChannel));
-		ret.nchildren = cJSON_GetArraySize(children);
-		for (int i = 0; i < cJSON_GetArraySize(children); i++) {
-			ret.children[i] =
-				RecursiveParseChannel(cJSON_GetArrayItem(children, i));
-		}
-	} else {
-		ret.children = NULL;
-		ret.nchildren = 0;
-	}
+YampChannel* RecursiveParseChannel(const cJSON* raw) {
+    if (!cJSON_IsObject(raw)) return NULL;
 
-	ret.type = cJSON_GetObjectItem(raw, "type")->valueint;
-	const cJSON* jpeople = cJSON_GetObjectItem(raw, "members");
-	const char* addr = cJSON_GetStringValue(cJSON_GetObjectItem(raw, "id"));
-	ret.npeople = cJSON_GetArraySize(jpeople);
-	ret.people = malloc(sizeof(YampUser*) * cJSON_GetArraySize(jpeople));
-	int i = 0;
-	const cJSON* item;
-	cJSON_ArrayForEach(item, jpeople) { ret.people[i++] = ParseUserJSON(item); }
+    YampChannel* ret = calloc(1, sizeof *ret);
+    if (!ret) return NULL;
 
-	return ret;
+    const cJSON* pos = cJSON_GetObjectItem(raw, "position");
+    ret->pos = cJSON_IsNumber(pos) ? pos->valueint : 0;
+
+    const cJSON* type = cJSON_GetObjectItem(raw, "type");
+    if (!cJSON_IsNumber(type)) { free(ret); return NULL; }
+    ret->type = type->valueint;
+
+    const cJSON* id = cJSON_GetObjectItem(raw, "id");
+    if (!cJSON_IsString(id) || !id->valuestring) { free(ret); return NULL; }
+    snprintf(ret->id, sizeof ret->id, "%s", id->valuestring);
+
+    const cJSON* name   = cJSON_GetObjectItem(raw, "name");
+    const cJSON* icon   = cJSON_GetObjectItem(raw, "icon");
+    const cJSON* parent = cJSON_GetObjectItem(raw, "parent");
+    const cJSON* owner  = cJSON_GetObjectItem(raw, "owner");
+    const cJSON* space  = cJSON_GetObjectItem(raw, "space");
+
+    ret->name   = cJSON_IsString(name)   ? dup0(name->valuestring)   : NULL;
+    ret->icon   = cJSON_IsString(icon)   ? dup0(icon->valuestring)   : NULL;
+    ret->parent = cJSON_IsString(parent) ? dup0(parent->valuestring) : NULL;
+    ret->owner  = cJSON_IsString(owner)  ? dup0(owner->valuestring)  : NULL;
+    ret->space  = cJSON_IsString(space)  ? dup0(space->valuestring)  : NULL;
+
+    const cJSON* children = cJSON_GetObjectItem(raw, "children");
+    if (cJSON_IsArray(children)) {
+        int n = cJSON_GetArraySize(children);
+        if (n > 0) {
+            ret->children = calloc(n, sizeof *ret->children);
+            if (ret->children) {
+                int i = 0;
+                const cJSON* child;
+                cJSON_ArrayForEach(child, children) {
+                    YampChannel* c = RecursiveParseChannel(child);
+                    if (c) ret->children[i++] = c;
+                }
+                ret->nchildren = i;
+            }
+        }
+    }
+
+    const cJSON* members = cJSON_GetObjectItem(raw, "members");
+    if (cJSON_IsArray(members)) {
+        int n = cJSON_GetArraySize(members);
+        if (n > 0) {
+            ret->people = calloc(n, sizeof *ret->people);
+            if (ret->people) {
+                int i = 0;
+                const cJSON* m;
+                cJSON_ArrayForEach(m, members)
+                    ret->people[i++] = ParseUserJSON(m);
+                ret->npeople = i;
+            }
+        }
+    }
+
+    return ret;
 }
+YampChannel DupChannelObjectFields(const YampChannel* s) {
+    YampChannel c = *s;
 
-YampChannel DupChannelObject_Inline(const YampChannel* s) {
-	YampChannel c = *s;
+    c.name   = dup0(s->name);
+    c.icon   = dup0(s->icon);
+    c.parent = dup0(s->parent);
+    c.owner  = dup0(s->owner);
+    c.space  = dup0(s->space);
 
-	c.name = dup0(s->name);
+    c.children = NULL;
+    c.nchildren = 0;
+    if (s->nchildren && s->children) {
+        c.children = malloc(s->nchildren * sizeof *c.children);
+        for (int i = 0; i < s->nchildren; i++)
+            c.children[i] = DupChannelObject(s->children[i]);
+        c.nchildren = s->nchildren;
+    }
 
-	if (s->children && s->nchildren > 0) {
-		c.children = malloc(sizeof(YampChannel) * s->nchildren);
-		for (int i = 0; i < s->nchildren; i++)
-			c.children[i] = DupChannelObject_Inline(&s->children[i]);
-	} else {
-		c.children = NULL;
-		c.nchildren = 0;
-	}
+    c.people = NULL;
+    c.npeople = 0;
+    if (s->npeople && s->people) {
+        c.people = malloc(s->npeople * sizeof *c.people);
+        for (int i = 0; i < s->npeople; i++)
+            c.people[i] = DupUserObject(s->people[i]);
+        c.npeople = s->npeople;
+    }
 
-	if (s->people && s->npeople > 0) {
-		c.people = malloc(sizeof(YampUser*) * s->npeople);
-		for (int i = 0; i < s->npeople; i++) {
-			c.people[i] = DupUserObject(s->people[i]);
-		}
-	} else {
-		c.people = NULL;
-		c.npeople = 0;
-	}
-
-	return c;
+    return c;
 }
-
 YampChannel* DupChannelObject(const YampChannel* s) {
 	YampChannel* c = malloc(sizeof(YampChannel));
-	*c = DupChannelObject_Inline(s);
+	*c = DupChannelObjectFields(s);
 	return c;
 }
-void YampChannelFree(YampChannel* ch) {
-	if (!ch)
+void FreeChannelObject(YampChannel* ch){
+	if(!ch){
 		return;
-
+	}
 	free(ch->name);
-
-	for (int i = 0; i < ch->nchildren; i++)
-		YampChannelFree(&ch->children[i]);
-	free(ch->children);
-	ch->children = NULL;
-	ch->nchildren = 0;
-
-	for (int i = 0; i < ch->npeople; i++) {
+	free(ch->parent);
+	free(ch->icon);
+	free(ch->space);
+	free(ch->owner);
+	for(int i = 0; i<ch->npeople; i++){
 		FreeUserObject(ch->people[i]);
 	}
 	free(ch->people);
-	ch->people = NULL;
-	ch->npeople = 0;
+	for(int i = 0; i<ch->nchildren; i++){
+		FreeChannelObject(ch->children[i]); // TODO make these YampChannel** later, like for people are
+	}
+	free(ch->children);
+	free(ch);
 }
 
 void FreeMessageFields(YampMessage* msg) {
@@ -647,7 +620,7 @@ void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 		YampUser** outgoing_fq =
 			malloc(sizeof(YampUser*) * (noutfq ? noutfq : 1));
 		YampSpace* spaces = malloc(sizeof(YampSpace) * (nspaces ? nspaces : 1));
-		YampChannel* convs =
+		YampChannel** convs =
 			malloc(sizeof(YampChannel) * (nconvs ? nconvs : 1));
 		YampUser** friends =
 			malloc(sizeof(YampUser*) * (nfriends ? nfriends : 1));
@@ -684,13 +657,16 @@ void HandleResponse(cJSON* srvr, CallbackStackEntry* callback_entry,
 			return;
 		cJSON* channelarr = cJSON_GetObjectItem(response, "channels");
 		int n = cJSON_IsArray(channelarr) ? cJSON_GetArraySize(channelarr) : 0;
-		YampChannel* charr = malloc(sizeof(YampChannel) * (n ? n : 1));
+		YampChannel** charr = malloc(sizeof(YampChannel*) * (n ? n : 1));
 		for (int i = 0; i < n; i++) {
 			charr[i] = RecursiveParseChannel(cJSON_GetArrayItem(channelarr, i));
 		}
 		((YampChannelsFetchedCb)cb)(charr, n);
-
+		
 	} else if (strcmp(ep, "GetMessageHistory") == 0) {
+		if(!success){
+			return;
+		}
 		if (!cb)
 			return;
 		cJSON* msgarr = cJSON_GetObjectItem(response, "messages");
@@ -907,8 +883,8 @@ void* YAMPRecvLoop(void* fd) {
 								? cJSON_GetArraySize(channelarr)
 								: 0;
 
-					YampChannel* charr =
-						malloc(sizeof(YampChannel) * (n ? n : 1));
+					YampChannel** charr =
+						malloc(sizeof(YampChannel*) * (n ? n : 1));
 
 					for (int i = 0; i < n; i++) {
 						charr[i] = RecursiveParseChannel(
@@ -924,7 +900,7 @@ void* YAMPRecvLoop(void* fd) {
 					}
 
 					for (int i = 0; i < n; i++)
-						YampChannelFree(&charr[i]);
+						FreeChannelObject(charr[i]);
 
 					free(charr);
 
@@ -951,15 +927,15 @@ void* YAMPRecvLoop(void* fd) {
 					FreeUserObject(user);
 
 				} else if (strcmp(eventname, "NewConversation") == 0) {
-					YampChannel conversation = RecursiveParseChannel(eventdata);
+					YampChannel* conversation = RecursiveParseChannel(eventdata);
 
 					for (YampEventListener* l = EventListeners; l;
 						 l = l->next) {
 						if (l->onNewConversation)
-							l->onNewConversation(&conversation);
+							l->onNewConversation(conversation);
 					}
 
-					YampChannelFree(&conversation);
+					FreeChannelObject(conversation);
 
 				} else if (strcmp(eventname, "Typing") == 0) {
 					YampUser* user =
@@ -1268,15 +1244,15 @@ int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
 	cJSON_AddStringToObject(data, "space", space);
 	cJSON_AddStringToObject(data, "name", name);
 	if (pos >= 0) {
-		cJSON_AddNumberToObject(data, "pos", pos);
+		cJSON_AddNumberToObject(data, "position", pos);
 	}
-	cJSON_AddNumberToObject(data, "channeltype", type);
+	cJSON_AddNumberToObject(data, "type", type);
 	if (parent) {
 		cJSON_AddStringToObject(data, "parent", parent);
 	} else {
 		cJSON_AddNullToObject(data, "parent");
 	}
-	YAMPSendRequest(fd, "InsertChannel", data, callback, NULL);
+	YAMPSendRequest(fd, "CreateChannel", data, callback, NULL);
 	return 1;
 }
 

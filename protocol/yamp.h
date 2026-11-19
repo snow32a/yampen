@@ -22,16 +22,6 @@ typedef SOCKET socket_fd;
 #else
 typedef int socket_fd;
 #endif
-typedef struct {
-	int type;
-	char* where;	   // to be used in the APIs
-	char* OtherGuy;	   // for DMs only, otherwise NULL.. CHECK AND DO NOT
-					   // DEREFERENCE THAAT!
-	char* GuildName;   // Above but for guilds!
-	char* ChannelName; // same same, but differeeeent :sob:
-	char* GC_ID; // Do not dereference if its not a GC, because it will be NULL
-} chat;
-
 
 // Attempt to sync these with the server time as much as you can!
 
@@ -55,9 +45,13 @@ typedef struct YampChannel {
 	int type;
 	char id[16+1+16+1];
 	char* name;
-	struct YampChannel* children;
+	char* icon; // Only used for GCs
+	char* owner; // Only used for GCs and threads
+	char* space; // Only used for channels and threads
+	struct YampChannel** children;
 	int nchildren;
 	int pos;
+	char* parent;
 	int npeople;
 	YampUser** people;
 } YampChannel;
@@ -98,7 +92,7 @@ struct YampMessage {
 
 typedef struct {
     YampUser     *usr;
-    YampChannel *conversations; int nconversations;
+    YampChannel **conversations; int nconversations;
     YampUser    **friends;       int nfriends;
     YampSpace   *spaces;        int nspaces;
     YampUser    **incfq;         int fqcount;
@@ -111,7 +105,7 @@ typedef struct {
 typedef void YAMPNewSpaceFn(YampSpace spaces);
 typedef void YAMPNewFriendFn(YampUser* friend);
 typedef void YAMPNewConversationFn(YampChannel* conversation);
-typedef void YAMPChannelsUpdatedFn(YampChannel* channels, int n, char* space);
+typedef void YAMPChannelsUpdatedFn(YampChannel** channels, int n, char* space);
 
 typedef void YAMPDisconnectedFn(void);
 typedef void YAMPStatusUpdateFn(char* name, YampStatus* stat);
@@ -173,9 +167,6 @@ int YAMPListConversations(SSL* fd, void* callback);
 int YAMPStartDM(SSL* fd, char* targetusr, void* callback);
 int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem, void* callback);
 char* MakeDMChannel(const char* a, const char* b);
-char* MakeGCChannel(const char* a);
-const char* ParseGCChannel(const char* a);
-gboolean YAMPProcessWhere(char* where, char* curUsername, chat* out);
 
 // messages
 int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce,
@@ -221,8 +212,7 @@ YampSpace DupSpaceObject(const YampSpace* s);
 
 // channel object helpers
 YampChannel* DupChannelObject(const YampChannel* s);
-YampChannel DupChannelObject_Inline(const YampChannel* s);
-void YampChannelFree(YampChannel* ch);
+void FreeChannelObject(YampChannel* ch);
 
 // status object helpers
 void FreeStatusObject(YampStatus* stat);
