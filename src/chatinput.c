@@ -1,10 +1,10 @@
 #include "chatinput.h"
-#include "protocol/yamp.h"
+#include <yamp.h>
 #include "emojipopover.h"
 #include "globals.h"
 #include "imwnd.h"
 #include "hashtables.h"
-#include "chatwnd.h"
+#include <chatwnd.h>
 int LastTypedAt = 0;
 typedef struct {
 	YampMessage* msg;
@@ -177,6 +177,7 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 			gtk_widget_unparent(wdg);
 			wdg = next;
 		}
+		ReplyingToMsg = NULL;
 		gtk_widget_set_visible(AttachementsBox, 0);
 		return GDK_EVENT_STOP;
 	} else if (keyval == GDK_KEY_colon) {

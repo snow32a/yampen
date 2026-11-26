@@ -1,23 +1,22 @@
 include config.mk
 
-SRC = *.c protocol/*.c
+SRC = src/*.c protocol/*.c
+
+RES_DEPS := assets.gresource.xml $(shell glib-compile-resources \
+    --sourcedir=. --generate-dependencies assets.gresource.xml 2>/dev/null)
+
 CC = gcc
 
-CFLAGS += -Wall -g -O0
+CFLAGS += -Wall -g -O0 -Iprotocol -Iinclude
 
 BUILD_DIR := build
 ifeq ($(PLATFORM),win32)
 
 build/yampen.exe: $(SRC)
-	./gen-resources.sh
 	@mkdir -p $(BUILD_DIR)
 	$(CROSS_COMPILE)$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-o $(BUILD_DIR)/yampen.exe \
 		$(SRC) $(LDFLAGS) $(LIBS)
-	glib-compile-resources assets.gresource.xml \
-		--sourcedir=. \
-		--target=assets.c \
-		--generate-source
 	@queue=$$(mktemp); \
 	seen=$$(mktemp); \
 	trap 'rm -f "$$queue" "$$seen"' EXIT; \
@@ -53,13 +52,13 @@ build/yampen.exe: $(SRC)
 	makensis setup.nsi
 else
 build/yampen: $(SRC)
-	./gen-resources.sh
 	@mkdir -p $(BUILD_DIR)
-	glib-compile-resources assets.gresource.xml \
-		--sourcedir=. \
-		--target=assets.c \
-		--generate-source
 	$(CC) $(CPPFLAGS) -fsanitize=address $(CFLAGS) \
 		-o $(BUILD_DIR)/yampen \
 		$(SRC) $(LDFLAGS) $(LIBS)
 endif
+
+src/assets.c: $(RES_DEPS)
+	./gen-resources.sh
+	glib-compile-resources assets.gresource.xml \
+	    --sourcedir=. --target=src/assets.c --generate-source

@@ -6,6 +6,7 @@
     echo '  <file>assets/icons/hicolor/scalable/symbolic/insert-symbolic.svg</file>'
     echo '  <file>assets/icons/hicolor/scalable/symbolic/invite-symbolic.svg</file>'
     echo '  <file>assets/icons/hicolor/scalable/symbolic/text-channel-symbolic.svg</file>'
+    echo '  <file>assets/icons/hicolor/scalable/symbolic/crown-symbolic.svg</file>'
     echo '  <file>assets/styles.css</file>'
     echo '  <file>assets/pfps/default0.png</file>'
     echo '  <file>assets/pfps/default1.png</file>'

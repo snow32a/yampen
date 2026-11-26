@@ -2,14 +2,14 @@
 #include "gio/gmenu.h"
 #include "glib-object.h"
 #include "glib.h"
-#include "globals.h"
+#include <globals.h>
 #include "gtk/gtk.h"
-#include "hashtables.h"
-#include "protocol/yamp.h"
-#include "message.h"
+#include <hashtables.h>
+#include <yamp.h>
+#include <message.h>
 #include <curl/curl.h>
-#include "chatwnd.h"
-#include "imwnd.h"
+#include <chatwnd.h>
+#include <imwnd.h>
 #include <pthread.h>
 typedef struct {
 	char* where;
@@ -34,24 +34,6 @@ char* GetUTF8Codepoints(char* input) {
 		}
 	}
 	return str;
-}
-unsigned int GetDefaultPfp(const char* id) {
-	unsigned rem = 0;
-
-	for (int i = 0; i < 16; i++) {
-		unsigned v;
-
-		if (id[i] >= '0' && id[i] <= '9')
-			v = id[i] - '0';
-		else if (id[i] >= 'a' && id[i] <= 'z')
-			v = id[i] - 'a' + 10;
-		else
-			return 0; // invalid ID
-
-		rem = (rem * 36 + v) % 5;
-	}
-
-	return rem;
 }
 
 #define QUOTE_BAR "<span alpha=\"60%\">\xe2\x96\x8e </span>"
@@ -348,7 +330,7 @@ void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel) {
 	char* title = NULL;
 	char* body = NULL;
 
-	if (channel->type >= YAMP_SPACE_TEXT) {
+	if (YAMP_IS_SPACE_TYPE(channel->type)) {
 		title = g_strdup_printf("Welcome to #%s", channel->name);
 		body = g_strdup_printf("This is the start of #%s.", channel->name);
 	} else if (channel->type == YAMP_GC) {
@@ -357,7 +339,7 @@ void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel) {
 		} else {
 			title = g_strdup("Welcome to the group!");
 		}
-		body = g_strdup("Have a nice chat w/ your friends!");
+		body = g_strdup("Enjoy the group chat!");
 	} else if (channel->type == YAMP_DM) {
 		title = g_strdup("Welcome!");
 		char* other_guy;
@@ -371,7 +353,7 @@ void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel) {
 							: channel->people[0]->username;
 		}
 		body = g_strdup_printf(
-			"This is the start of your conversation with %s!", channel->name);
+			"This is the start of your conversation with <b>%s</b>!", other_guy);
 	} else {
 		return;
 	}
@@ -389,7 +371,8 @@ void PushChannelBanner(GtkWidget* chatarea, YampChannel* channel) {
 	gtk_label_set_xalign(GTK_LABEL(header), 0.0);
 	gtk_label_set_wrap(GTK_LABEL(header), TRUE);
 
-	GtkWidget* text = gtk_label_new(body);
+	GtkWidget* text = gtk_label_new(NULL);
+	gtk_label_set_markup(GTK_LABEL(text), body);
 	gtk_widget_add_css_class(text, "banner-text");
 	gtk_widget_set_halign(text, GTK_ALIGN_START);
 	gtk_label_set_xalign(GTK_LABEL(text), 0.0);
@@ -550,8 +533,10 @@ void ReplyCallback(GSimpleAction* action, GVariant* parameter,
 	*ReplyingToMsg = (YampMessage){0};
 	ReplyingToMsg->author = malloc(sizeof(YampUser));
 	strncpy(ReplyingToMsg->id, msgid, sizeof(ReplyingToMsg->id) - 1);
-	strncpy(ReplyingToMsg->author->id, userid, sizeof(ReplyingToMsg->author->id) - 1);
-	ReplyingToMsg->author->displayname = strdup(dispname ? dispname : "Unknown");
+	strncpy(ReplyingToMsg->author->id, userid,
+			sizeof(ReplyingToMsg->author->id) - 1);
+	ReplyingToMsg->author->displayname =
+		strdup(dispname ? dispname : "Unknown");
 	ReplyingToMsg->content = strdup(content ? content : "");
 	isReplying = 1;
 
@@ -634,6 +619,7 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 	GtkWidget* lastmsgrow = gtk_widget_get_last_child(chatarea);
 	GtkWidget* msgrow = NULL;
 	GtkWidget* msgvbox = NULL;
+	GtkWidget* authorrow = NULL;
 	GtkWidget* outer = NULL;
 	GtkWidget* msgbox = NULL;
 
@@ -723,6 +709,10 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 		gtk_widget_set_halign(msgvbox, GTK_ALIGN_START);
 		gtk_widget_set_hexpand(msgvbox, TRUE);
 
+		authorrow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+		gtk_widget_set_halign(authorrow, GTK_ALIGN_START);
+		gtk_widget_set_hexpand(authorrow, TRUE);
+
 		GtkWidget* usrtext = gtk_label_new(NULL);
 
 		char* markup = g_markup_printf_escaped(
@@ -731,8 +721,22 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 		gtk_label_set_markup(GTK_LABEL(usrtext), markup);
 		g_free(markup);
 
+		struct tm tm;
+#ifdef _WIN32
+		localtime_s(&tm, &msg->timestamp);
+#else
+		localtime_r(&msg->timestamp, &tm);
+#endif
+		char timestamp_buf[6];
+		strftime(timestamp_buf, sizeof timestamp_buf, "%H:%M", &tm);
+
+		GtkWidget* timestamp_lbl = gtk_label_new(timestamp_buf);
+		gtk_widget_set_opacity(timestamp_lbl, 0.5f);
+
 		gtk_widget_set_halign(usrtext, GTK_ALIGN_START);
-		gtk_box_append(GTK_BOX(msgvbox), usrtext);
+		gtk_box_append(GTK_BOX(authorrow), usrtext);
+		gtk_box_append(GTK_BOX(authorrow), timestamp_lbl);
+		gtk_box_append(GTK_BOX(msgvbox), authorrow);
 
 		gtk_box_append(GTK_BOX(msgbox), msgvbox);
 	}
@@ -801,16 +805,7 @@ GtkWidget* PushUIMessage(GtkWidget* chatscroll, GtkWidget* chatarea,
 	}
 
 	if (msg->content && strlen(msg->content)) {
-		GtkCssProvider* msgbubprovider = gtk_css_provider_new();
-		gtk_css_provider_load_from_string(
-			msgbubprovider, "box { padding: 10px; border-radius: 10px; "
-							"background-color: rgba(0, 0, 0, 0.2); }");
-
-		gtk_style_context_add_provider(gtk_widget_get_style_context(msgtext),
-									   GTK_STYLE_PROVIDER(msgbubprovider),
-									   GTK_STYLE_PROVIDER_PRIORITY_USER);
-
-		g_object_unref(msgbubprovider);
+		gtk_widget_add_css_class(msgtext, "section");
 
 		gtk_widget_set_halign(msgtext, GTK_ALIGN_START);
 		gtk_box_append(GTK_BOX(msgvbox), msgtext);

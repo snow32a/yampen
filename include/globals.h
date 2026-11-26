@@ -9,3 +9,4 @@ extern char *curUsername;
 extern char *curUserID;
 extern GQueue *spaces_queue;
 extern CURL *curl;
+extern char* pfp_dir;

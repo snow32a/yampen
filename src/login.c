@@ -4,7 +4,7 @@
 #include "glib.h"
 #include "imwnd.h"
 #include "gtk/gtkshortcut.h"
-#include "protocol/yamp.h"
+#include <yamp.h>
 #include "globals.h"
 #include <cjson/cJSON.h>
 #ifdef HAVE_LIBSECRET

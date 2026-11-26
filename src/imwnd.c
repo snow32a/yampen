@@ -6,99 +6,46 @@
 #include "gio/gmenu.h"
 #include "glib-object.h"
 #include "glib.h"
-#include "login.h"
-#include "chatwnd.h"
+#include <login.h>
+#include <yamp.h>
 #include "pango/pango-attributes.h"
-#include "settings.h"
+#include <settings.h>
 #include "glibconfig.h"
 #include "gtk/gtkshortcut.h"
-#include "protocol/yamp.h"
-#include "globals.h"
-#include "hashtables.h"
+#include <yamp.h>
+#include <globals.h>
+#include <hashtables.h>
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include "insertspace.h"
 #include "notification.h"
-#include "usersettings.h"
-#include "gcmemselect.h"
+#include <usersettings.h>
+#include <gcmemselect.h>
 #include "emoji_map.h"
 #include "chatinput.h"
 #include "types.h"
 #include "invitedialog.h"
+#include "gcsettings.h"
+#include <chatwnd.h>
+#include <avatar.h>
+#include <config.h>
+#include <imwnd_parts.h>
+#include <channeltree.h>
+#include <memberslist.h>
+#include <userprofile.h>
 
-void onYAMPDisconnected(void);
+char* dup0(const char* s) { return s ? strdup(s) : NULL; }
 
-/* Spaces */
-void onYAMPSpacesFetched(YampSpace* spaces, int nspaces);
-void onYAMPNewSpace(YampSpace space);
-
-/* Channels */
 void onYAMPChannelsFetched(YampChannel** channels, int nchannels);
-void onYAMPChannelsUpdated(YampChannel** channels, int n, char* space);
-void onYAMPChannelJoined(YampUser* user, char* channel_id);
-void onYAMPChannelLeave(YampUser* user, char* channel_id);
-
-/* Messages */
 void onYAMPMessageHistoryLoaded(YampMessage** msgs, int nmsgs, int hasmore);
-void onYAMPReceiveIM(YampMessage* msg, int nonce);
-void onYAMPMessageDeleted(char* message_id);
 
-/* Status / typing */
-void onYAMPStatusUpdate(char* id, YampStatus* stat);
-void onYAMPTyping(YampUser* usr, char* channel);
-
-/* User details */
-void onYAMPUserDetailsFetched(cJSON* Details);
-
-/* Friends / conversations */
-void onYAMPFriendRequestReceived(YampUser* usr);
-void onYAMPFriendReqSent(int success);
-void onYAMPFriendReqResolved(char* username, int success);
-void onYAMPNewFriend(YampUser* friend);
-void onYAMPNewConversation(YampChannel* conv);
-void onYAMPFriendsListed(YampUser* friends, int nfriends);
-
-// probably should make an imwnd_globals.c some time later
-char* curUserID;
 GQueue MessageStack = G_QUEUE_INIT;
-GtkWidget* main_window;
-GtkWidget* ChannelSidebar;
-GtkWidget* dmsbutton;
-GtkWidget* GuildVBOX;
-GtkWidget* GuildList;
-GtkWidget* SelfPfp;
-GtkWidget* SelfPfpFrame;
-GtkWidget* chatscroll;
-GtkWidget* chatarea;
-GtkWidget* DisplayNameLabel;
-GtkWidget* UsernameLabel;
-GtkWidget* selectedspacebtn;
-GtkWidget* stackpane;
-GtkWidget* notifoverlay;
-GtkWidget* dmlist;
-GtkWidget* ListVBOX;
-GtkWidget* ListTitle;
-GtkWidget* suvbox;
-GtkWidget* chattitle;
-GtkWidget* typingindicator;
-GtkWidget* replyindicator;
-GtkWidget* AttachementsBox;
-GtkWidget* memberlist = NULL;
-
 YampChannel* currentChannel = NULL;
 int isReplying = 0;
 YampMessage* ReplyingToMsg = NULL;
 
-typedef struct {
-	char* id;
-	char* name;
-	guint timeout; // GSource id, 0 if already fired
-} TypingEntry;
-
 static GPtrArray* typing_users = NULL;
 void TypingClear(void);
-
-#define TYPING_TIMEOUT_SECONDS 8
 
 gboolean listmode = FALSE;
 char* curSpace = NULL;
@@ -108,17 +55,11 @@ char* pfp_dir;
 int MembersListShown = 0;
 
 AttachementEntry* curAttachements = NULL;
-
-#define TOPBAR_HEIGHT 40
 GtkSizeGroup* topbar_group;
 
-static size_t file_write_cb(char* ptr, size_t size, size_t nmemb,
-							void* userdata) {
-	return fwrite(ptr, size, nmemb, (FILE*)userdata);
-}
-
 static gboolean onUIDisconnected(gpointer none) {
-	GtkAlertDialog* alert = gtk_alert_dialog_new("Server disconnected!");
+	GtkAlertDialog* alert =
+		gtk_alert_dialog_new("The current server has went down!");
 	gtk_alert_dialog_show(alert, NULL);
 	gtk_window_destroy(GTK_WINDOW(main_window));
 	DisplayLoginDialog(global_app);
@@ -131,123 +72,8 @@ YampUser** cached_friends = NULL;
 int ncached_friends = 0;
 
 void onYAMPDisconnected() { g_idle_add(onUIDisconnected, 0); }
-#define AVATAR_MAX_BYTES (8 * 1024 * 1024)
 
-typedef struct {
-	char* url;
-	char* cache_path;
-	int px;
-	GWeakRef widget;
-	GBytes* bytes;
-} AvatarFetch;
-
-size_t AvatarWriteCb(char* ptr, size_t size, size_t nmemb, void* ud) {
-	GByteArray* buf = ud;
-	size_t n = size * nmemb;
-	if (buf->len + n > AVATAR_MAX_BYTES)
-		return 0;
-	g_byte_array_append(buf, (guint8*)ptr, n);
-	return n;
-}
-char* AvatarCachePath(const char* url) {
-	char* hash = g_compute_checksum_for_string(G_CHECKSUM_SHA1, url, -1);
-	char* path = g_build_filename(pfp_dir, hash, NULL);
-	g_free(hash);
-	return path;
-}
-gboolean AvatarDone(gpointer data) {
-	AvatarFetch* f = data;
-	GtkWidget* w = g_weak_ref_get(&f->widget);
-
-	if (w) {
-		if (f->bytes) {
-			GError* err = NULL;
-			GdkTexture* tex = gdk_texture_new_from_bytes(f->bytes, &err);
-			if (tex) {
-				gtk_image_set_from_paintable(GTK_IMAGE(w), GDK_PAINTABLE(tex));
-				if (f->px > 0)
-					gtk_image_set_pixel_size(GTK_IMAGE(w), f->px);
-				g_object_unref(tex);
-			} else {
-				g_warning("Bad avatar image from %s: %s", f->url, err->message);
-				g_clear_error(&err);
-			}
-		}
-		g_object_unref(w);
-	}
-
-	if (f->bytes)
-		g_bytes_unref(f->bytes);
-	g_weak_ref_clear(&f->widget);
-	g_free(f->url);
-	g_free(f->cache_path);
-	g_free(f);
-	return G_SOURCE_REMOVE;
-}
-
-gpointer AvatarThread(gpointer data) {
-	AvatarFetch* f = data;
-	GByteArray* buf = g_byte_array_new();
-	gboolean from_cache = FALSE;
-
-	if (f->cache_path) {
-		gchar* contents = NULL;
-		gsize len = 0;
-		if (g_file_get_contents(f->cache_path, &contents, &len, NULL)) {
-			if (len > 0 && len <= AVATAR_MAX_BYTES) {
-				g_byte_array_append(buf, (guint8*)contents, len);
-				from_cache = TRUE;
-			}
-			g_free(contents);
-		}
-	}
-
-	if (!from_cache) {
-		CURL* c = curl_easy_init();
-		if (c) {
-			curl_easy_setopt(c, CURLOPT_URL, f->url);
-			curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, AvatarWriteCb);
-			curl_easy_setopt(c, CURLOPT_WRITEDATA, buf);
-			curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-			curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
-			curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
-			curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
-			CURLcode rc = curl_easy_perform(c);
-			curl_easy_cleanup(c);
-			if (rc != CURLE_OK) {
-				g_warning("Avatar fetch failed (%s): %s", f->url,
-						  curl_easy_strerror(rc));
-				g_byte_array_set_size(buf, 0);
-			}
-		}
-		if (buf->len && f->cache_path)
-			g_file_set_contents(f->cache_path, (gchar*)buf->data, buf->len,
-								NULL);
-	}
-
-	if (buf->len)
-		f->bytes = g_byte_array_free_to_bytes(buf);
-	else
-		g_byte_array_free(buf, TRUE);
-
-	g_idle_add(AvatarDone, f);
-	return NULL;
-}
-void LoadAvatarAsync(GtkWidget* image, const char* url, const char* cache_path,
-					 int px) {
-	if (!image || !url || !*url)
-		return;
-	AvatarFetch* f = g_new0(AvatarFetch, 1);
-	f->url = g_strdup(url);
-	f->cache_path = g_strdup(cache_path);
-	f->px = px;
-	g_weak_ref_init(&f->widget, image);
-	g_thread_unref(g_thread_new("avatar-fetch", AvatarThread, f));
-}
-
-
-
-static void SetStatusFrameColor(GtkWidget* frame, const char* hex) {
+void SetStatusFrameColor(GtkWidget* frame, const char* hex) {
 	GtkCssProvider* p = g_object_get_data(G_OBJECT(frame), "status-provider");
 	if (!p) {
 		p = gtk_css_provider_new();
@@ -282,163 +108,27 @@ GtkWidget* WrapInStatusFrame(GtkWidget* img, int px, const char* hex) {
 	return frame;
 }
 
-void BuildUserProfile(YampUser* usr) {
-	GtkWidget* overlay = gtk_overlay_new();
-
-	GtkWidget* base = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-
-	GtkWidget* banner = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-	gtk_widget_add_css_class(banner, "banner");
-	gtk_widget_set_size_request(banner, -1, 100);
-	gtk_widget_set_hexpand(banner, TRUE);
-	gtk_box_append(GTK_BOX(base), banner);
-
-	GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-	gtk_widget_set_size_request(spacer, -1, 40);
-	gtk_box_append(GTK_BOX(base), spacer);
-
-	gtk_overlay_set_child(GTK_OVERLAY(overlay), base);
-
-	GtkWidget* pfp;
-	if (usr->pfp && strlen(usr->pfp)) {
-		pfp = gtk_image_new();
-		char* url = ProcessAttachmentURL(usr->pfp);
-		char* pfp_path = AvatarCachePath(url);
-		LoadAvatarAsync(pfp, url, pfp_path, 80);
-		InsertPfpPath(usr->id, pfp_path);
-		free(url);
-		g_free(pfp_path);
-	} else {
-		char pfppath[38];
-		sprintf(pfppath, "/org/yampen/assets/pfps/default%d.png",
-				GetDefaultPfp(usr->id));
-		pfp = gtk_image_new_from_resource(pfppath);
-	}
-	gtk_image_set_pixel_size(GTK_IMAGE(pfp), 80);
-	gtk_widget_add_css_class(pfp, "avatar");
-	gtk_widget_set_overflow(pfp, GTK_OVERFLOW_HIDDEN);
-	gtk_widget_set_halign(pfp, GTK_ALIGN_START);
-	gtk_widget_set_valign(pfp, GTK_ALIGN_END);
-	gtk_widget_set_margin_start(pfp, 16);
-	gtk_overlay_add_overlay(GTK_OVERLAY(overlay), pfp);
-
-	GtkWidget* infoarea = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-	gtk_widget_set_hexpand(infoarea, 1);
-	gtk_widget_set_margin_start(infoarea, 16);
-	gtk_widget_set_margin_end(infoarea, 16);
-	gtk_widget_set_halign(infoarea, GTK_ALIGN_START);
-	if (usr->displayname) {
-		GtkWidget* dpyname = gtk_label_new(usr->displayname);
-		gtk_widget_add_css_class(dpyname, "h2");
-		gtk_box_append(GTK_BOX(infoarea), dpyname);
-		GtkWidget* usrname = gtk_label_new(usr->username);
-		gtk_label_set_xalign(GTK_LABEL(usrname), 0.0f);
-		gtk_box_append(GTK_BOX(infoarea), usrname);
-	} else {
-		GtkWidget* usrname = gtk_label_new(usr->username);
-		gtk_widget_add_css_class(usrname, "h2");
-		gtk_box_append(GTK_BOX(infoarea), usrname);
-	}
-	gtk_box_append(GTK_BOX(suvbox), overlay);
-	gtk_box_append(GTK_BOX(suvbox), infoarea);
+void OnGCTitleGesture(GtkGestureClick* gesture, int n_press, double x, double y,
+					  gpointer user_data) {
+	SpawnGCEdit(GTK_WINDOW(main_window), (char*)user_data);
 }
-static const char* StatusToColor(const char* statusStr);
-
-typedef struct {
-	YampUser** users;
-	int n;
-} MemberSet;
-
-MemberSet* MemberSetCopy(YampUser** src, int n) {
-	MemberSet* set = malloc(sizeof(MemberSet));
-	set->n = n;
-	set->users = calloc(n ? n : 1, sizeof(YampUser));
-	for (int i = 0; i < n; i++) {
-		set->users[i] = DupUserObject(src[i]);
-	}
-	return set;
-}
-
-void MemberSetFree(gpointer data) {
-	MemberSet* set = data;
-	if (!set)
+void OnGCAddMembersCB(YampUser** users, int n) {
+	if (currentChannel->type != YAMP_GC) {
 		return;
-	for (int i = 0; i < set->n; i++) {
-		FreeUserObject(set->users[i]);
 	}
-	free(set->users);
-	free(set);
+	for (int i = 0; i < n; i++) {
+		YAMPAddMemberToGC(mainsock, users[i]->id, currentChannel->id, NULL);
+	}
 }
-
-void BuildMemberList(MemberSet* set) {
-	char* hdrtxt = g_strdup_printf("Members - %d", set->n);
-	GtkWidget* hdr = gtk_label_new(hdrtxt);
-	g_free(hdrtxt);
-	gtk_widget_add_css_class(hdr, "channel-category");
-	gtk_widget_set_halign(hdr, GTK_ALIGN_START);
-	gtk_widget_set_margin_start(hdr, 16);
-	gtk_widget_set_margin_top(hdr, 12);
-	gtk_widget_set_margin_bottom(hdr, 4);
-	gtk_box_append(GTK_BOX(suvbox), hdr);
-
-	GtkWidget* list = gtk_list_box_new();
-	memberlist = list;
-	gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_NONE);
-
-	for (int i = 0; i < set->n; i++) {
-		const YampUser* u = set->users[i];
-		const char* name = u->displayname ? u->displayname : u->username;
-
-		GtkWidget* row = gtk_list_box_row_new();
-		GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-		gtk_widget_set_margin_start(box, 8);
-		gtk_widget_set_margin_end(box, 8);
-		gtk_widget_set_margin_top(box, 4);
-		gtk_widget_set_margin_bottom(box, 4);
-
-
-		GtkWidget* pfp;
-		if (u->pfp && *u->pfp) {
-			pfp = gtk_image_new();
-			char* url = ProcessAttachmentURL(u->pfp);
-			char* pfp_path = AvatarCachePath(url);
-			LoadAvatarAsync(pfp, url, pfp_path, 32);
-			InsertPfpPath(u->id, pfp_path);
-			free(url);
-			g_free(pfp_path);
-		} else {
-			char* respath = g_strdup_printf(
-				"/org/yampen/assets/pfps/default%d.png", GetDefaultPfp(u->id));
-			pfp = gtk_image_new_from_resource(respath);
-			g_free(respath);
-		}
-		gtk_widget_add_css_class(pfp, "avatar");
-
-		const char* stat = u->status->status ? u->status->status : "offline";
-		GtkWidget* frame = WrapInStatusFrame(pfp, 32, StatusToColor(stat));
-		g_object_set_data_full(G_OBJECT(frame), "user-id", g_strdup(u->id),
-							   g_free);
-		char* label_txt = (curUserID && strcmp(u->id, curUserID) == 0)
-							  ? g_strdup_printf("%s (you)", name)
-							  : g_strdup(name);
-		GtkWidget* lbl = gtk_label_new(label_txt);
-		g_free(label_txt);
-		gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
-		gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-		gtk_widget_set_hexpand(lbl, TRUE);
-
-		gtk_box_append(GTK_BOX(box), frame);
-		gtk_box_append(GTK_BOX(box), lbl);
-		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
-		gtk_list_box_append(GTK_LIST_BOX(list), row);
-	}
-
-	GtkWidget* scroller = gtk_scrolled_window_new();
-	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
-								   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), list);
-	gtk_widget_set_vexpand(scroller, TRUE);
-	gtk_box_append(GTK_BOX(suvbox), scroller);
+void OnGCInviteBtn(GtkButton* btn, void* data) {
+	SpawnGCInitMemberSelector(cached_friends, ncached_friends,
+							  OnGCAddMembersCB);
+}
+void OnUIKickGCMember(YampUser* usr, void* dat) {
+	YAMPGCKick(mainsock, usr->id, dat, NULL);
+}
+void OnUITransferGCOwnership(YampUser* usr, void* dat) {
+	YAMPGCTransferOwnership(mainsock, usr->id, dat, NULL);
 }
 void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "chat");
@@ -452,17 +142,17 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 	GtkWidget* wdg;
 	while ((wdg = gtk_widget_get_first_child(suvbox)) != NULL)
 		gtk_widget_unparent(wdg);
-	GtkWidget* child = gtk_widget_get_next_sibling(
-		gtk_widget_get_first_child(gtk_list_box_row_get_child(row)));
-	currentChannel = g_object_get_data(G_OBJECT(child), "channel");
+	GtkWidget* child = GTK_WIDGET(row);
+
+	currentChannel = DupChannelObject(
+		(YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
 	int type = (int)g_object_get_data(G_OBJECT(child), "type");
 	LastTypedAt = 0;
 	if (type == YAMP_DM) {
 		memberlist = NULL;
 		BuildUserProfile(
-			GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
+			suvbox, GetUserObject(g_object_get_data(G_OBJECT(child), "id")));
 		MembersListShown = 0;
-		char* name = gtk_label_get_text(GTK_LABEL(child));
 		GtkWidget* titlewdg;
 		while ((titlewdg = gtk_widget_get_first_child(chattitle)) != NULL)
 			gtk_widget_unparent(titlewdg);
@@ -481,7 +171,6 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 							  onYAMPMessageHistoryLoaded);
 		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	} else if (type == YAMP_GC) {
-		char* name = gtk_label_get_text(GTK_LABEL(child));
 		GtkWidget* titlewdg;
 		while ((titlewdg = gtk_widget_get_first_child(chattitle)) != NULL)
 			gtk_widget_unparent(titlewdg);
@@ -491,15 +180,39 @@ void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
 		GtkWidget* titlebox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 		gtk_widget_set_margin_start(titlebox, 10);
 		gtk_widget_set_valign(chattitle, GTK_ALIGN_CENTER);
-		char* dpyname = g_object_get_data(G_OBJECT(child), "dpyname");
-		GtkWidget* recipientname = gtk_label_new(dpyname);
+		GtkWidget* name_wdg =
+			RecursiveFindWidgetByData(GTK_WIDGET(row), "tag", "name");
+
+
+
+		GtkGesture* title_gesture = gtk_gesture_click_new();
+		g_signal_connect_data(
+			title_gesture, "released", G_CALLBACK(OnGCTitleGesture),
+			g_strdup(currentChannel->id), (GClosureNotify)g_free, 0);
+
+
+		GtkWidget* recipientname =
+			gtk_label_new(gtk_label_get_text(GTK_LABEL(name_wdg)));
+		gtk_label_set_xalign(GTK_LABEL(recipientname), 0.0f);
+		gtk_widget_set_hexpand(GTK_WIDGET(recipientname), TRUE);
+
+		gtk_widget_add_controller(recipientname,
+								  GTK_EVENT_CONTROLLER(title_gesture));
+
+		GtkWidget* invbtn = gtk_button_new_from_icon_name("invite-symbolic");
+		g_signal_connect(invbtn, "clicked", G_CALLBACK(OnGCInviteBtn), NULL);
+		gtk_widget_set_halign(invbtn, GTK_ALIGN_CENTER);
+		gtk_widget_set_valign(invbtn, GTK_ALIGN_CENTER);
+
 		gtk_box_append(GTK_BOX(titlebox), recipientname);
 		gtk_box_append(GTK_BOX(chattitle), titlebox);
+		gtk_box_append(GTK_BOX(chattitle), invbtn);
 		MemberSet* members = g_object_get_data(G_OBJECT(child), "members");
 		if (members) {
-			BuildMemberList(members);
+			BuildGCMemberList(members, currentChannel->owner);
 		}
-		printf("%s\n", currentChannel->id);
+		SetMemberListActionCallbacks(OnUIKickGCMember, OnUITransferGCOwnership,
+									 currentChannel->id);
 		YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
 							  onYAMPMessageHistoryLoaded);
 		YAMPJoinChannel(mainsock, currentChannel->id, NULL);
@@ -530,25 +243,46 @@ void OnChannelSelected(GtkListBox* box, GtkListBoxRow* row,
 	}
 	TypingClear();
 	RecursiveDeselectChannelTree(ChannelSidebar, GTK_WIDGET(box));
-	currentChannel =
-		((YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
+	currentChannel = DupChannelObject(
+		(YampChannel*)g_object_get_data(G_OBJECT(row), "channel"));
+
+	GtkWidget* titlewdg;
+	while ((titlewdg = gtk_widget_get_first_child(chattitle)) != NULL)
+		gtk_widget_unparent(titlewdg);
+
+	GtkWidget* titlebox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+	gtk_widget_set_margin_start(titlebox, 10);
+	gtk_widget_set_valign(chattitle, GTK_ALIGN_CENTER);
+	GtkWidget* channel_icon =
+		gtk_image_new_from_icon_name("text-channel-symbolic");
+	gtk_image_set_pixel_size(GTK_IMAGE(channel_icon), 16);
+	GtkWidget* channel_title = gtk_label_new(currentChannel->name);
+	gtk_box_append(GTK_BOX(titlebox), channel_icon);
+	gtk_box_append(GTK_BOX(titlebox), channel_title);
+	gtk_box_append(GTK_BOX(chattitle), titlebox);
+
 	YAMPJoinChannel(mainsock, currentChannel->id, NULL);
 	YAMPGetMessageHistory(mainsock, currentChannel->id, 50, NULL,
 						  onYAMPMessageHistoryLoaded);
 }
 void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	gtk_widget_remove_css_class(dmsbutton, "active");
-	gtk_widget_remove_css_class(selectedspacebtn, "active");
+	if (selectedspacebtn)
+		gtk_widget_remove_css_class(selectedspacebtn, "active");
 	gtk_widget_add_css_class(GTK_WIDGET(btn), "active");
 	selectedspacebtn = GTK_WIDGET(btn);
 	listmode = FALSE;
 	YampSpace* space = user_data;
 	curSpace = space->id;
-
-	YAMPListSpaceChannels(mainsock, curSpace, onYAMPChannelsFetched);
+	YampChannel** cached_channels;
+	int ncached_channels = GetSpaceChannelCache(space->id,&cached_channels);
+	if(cached_channels){
+		LoadSpaceChannels(cached_channels,ncached_channels);
+	} else {
+		YAMPListSpaceChannels(mainsock, curSpace, onYAMPChannelsFetched);
+	}
 }
 int InsertSpace(YampSpace space) {
-	printf("%s\n", space.id);
 	GtkWidget* gldbtnrow = gtk_list_box_row_new();
 	GtkWidget* spacebtn = gtk_button_new();
 	YampSpace* heapspace = malloc(sizeof(YampSpace));
@@ -559,6 +293,7 @@ int InsertSpace(YampSpace space) {
 	gtk_widget_set_size_request(spacebtn, 52, 52);
 	gtk_widget_set_hexpand(spacebtn, FALSE);
 	gtk_widget_set_vexpand(spacebtn, FALSE);
+	gtk_widget_set_halign(spacebtn, GTK_ALIGN_CENTER);
 	GtkIconTheme* theme =
 		gtk_icon_theme_get_for_display(gdk_display_get_default());
 	// Worst case allocation size, if the text is literally jhas no fucking
@@ -575,62 +310,36 @@ int InsertSpace(YampSpace space) {
 	}
 	initials[initctr] = '\0';
 	GtkWidget* lbl = gtk_label_new(initials);
-	free(initials); // gtk strdups it internally
+	gtk_widget_set_hexpand(lbl, FALSE);
+	gtk_widget_set_halign(lbl, GTK_ALIGN_CENTER);
+	gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_NONE);
+
+	int avail = 52 - 10;
+	PangoLayout* layout = gtk_widget_create_pango_layout(lbl, initials);
+	int textw, texth;
+	pango_layout_get_pixel_size(layout, &textw, &texth);
+	g_object_unref(layout);
+
+	if (textw > avail) {
+		double scale = (double)avail / (double)textw;
+		if (scale < 0.4)
+			scale = 0.4; // don't go unreadably small
+		PangoAttrList* attrs = pango_attr_list_new();
+		pango_attr_list_insert(attrs, pango_attr_scale_new(scale));
+		gtk_label_set_attributes(GTK_LABEL(lbl), attrs);
+		pango_attr_list_unref(attrs);
+	}
+
+	free(initials);
 	gtk_button_set_child(GTK_BUTTON(spacebtn), lbl);
 	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(gldbtnrow), spacebtn);
 
-	GtkCssProvider* dmsprovider = gtk_css_provider_new();
-	gtk_css_provider_load_from_string(
-		dmsprovider, "button {"
-					 "	color: #f25858;"
-					 "  background: rgba(255,255,255,0.15);"
-					 "  border-radius: 16px;"
-					 "  padding: 0;"
-					 "  min-width: 48px;"
-					 "  min-height: 48px;"
-					 "  border: none;"
-					 "  transition: color 200ms ease, border-radius 200ms "
-					 "ease, background 200ms ease;"
-					 "}"
-					 "button:hover {"
-					 "	color: #404040;"
-					 "  background: #f25858;"
-					 "  border-radius: 12px;"
-					 "}"
-					 "button.active {"
-					 "	color: #404040;"
-					 "  background: #f25858;"
-					 "  border-radius: 12px;"
-					 "}");
-	gtk_style_context_add_provider(gtk_widget_get_style_context(spacebtn),
-								   GTK_STYLE_PROVIDER(dmsprovider),
-								   GTK_STYLE_PROVIDER_PRIORITY_USER);
-
+	gtk_widget_add_css_class(spacebtn, "space_button_noaccent");
 
 	gtk_list_box_append(GTK_LIST_BOX(GuildList), gldbtnrow);
 	g_object_set_data(G_OBJECT(gldbtnrow), "name", space.name);
 	g_object_set_data(G_OBJECT(gldbtnrow), "id", space.id);
-}
-int LoadSpaces(YampSpace* spaces, int nspaces) {
-	for (int i = 0; i < nspaces; i++) {
-		InsertSpace(spaces[i]);
-	}
-}
-typedef struct {
-	YampSpace* spaces;
-	int nspaces;
-} SpaceFetchPayload;
-gboolean MainThreadSpaceCB(void* data) {
-	SpaceFetchPayload* payload = data;
-	LoadSpaces(payload->spaces, payload->nspaces);
-	free(payload);
-	return G_SOURCE_REMOVE;
-}
-void onYAMPSpacesFetched(YampSpace* spaces, int nspaces) {
-	SpaceFetchPayload* payload = malloc(sizeof(SpaceFetchPayload));
-	payload->spaces = spaces;
-	payload->nspaces = nspaces;
-	g_idle_add(MainThreadSpaceCB, payload);
+	return 1;
 }
 gboolean MainThreadNewSpace(void* heapspace) {
 	InsertSpace(*(YampSpace*)heapspace);
@@ -647,280 +356,6 @@ typedef struct {
 	YampChannel** channels;
 	int nchannels;
 } ChannelFetchPayload;
-typedef struct {
-	char* space;
-	char* category;
-} ChannelMenuCtx;
-typedef struct {
-	ChannelMenuCtx menuctx;
-	GtkWidget* nameentry;
-} ChannelCreateBtnCtx;
-static void ChannelMenuCtxFree(gpointer data, GClosure* closure) {
-	ChannelMenuCtx* ctx = data;
-	if (!ctx)
-		return;
-	g_free(ctx->space);
-	g_free(ctx->category);
-	g_free(ctx);
-}
-void ChannelCreateBtnCallback(GtkButton* btn, gpointer dat) {
-	ChannelCreateBtnCtx* createctx = dat;
-	YAMPCreateChannel(mainsock, createctx->menuctx.space,
-					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
-						  GTK_ENTRY(createctx->nameentry))),
-					  -1, YAMP_SPACE_TEXT, createctx->menuctx.category, NULL);
-	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
-	free(dat);
-}
-void CategoryCreateBtnCallback(GtkButton* btn, gpointer dat) {
-	ChannelCreateBtnCtx* createctx = dat;
-	YAMPCreateChannel(mainsock, createctx->menuctx.space,
-					  gtk_entry_buffer_get_text(gtk_entry_get_buffer(
-						  GTK_ENTRY(createctx->nameentry))),
-					  -1, YAMP_SPACE_CATEGORY, createctx->menuctx.category,
-					  NULL);
-	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
-	free(dat);
-}
-void ChannelCancelBtnCallback(GtkButton* btn, gpointer dat) {
-	gtk_window_destroy(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(btn))));
-}
-static void OnCreateChannel(GSimpleAction* action, GVariant* param,
-							gpointer user_data) {
-	GtkWidget* dialog = gtk_application_window_new(global_app);
-	gtk_window_set_default_size(GTK_WINDOW(dialog), 300, 400);
-	GtkWidget* mainbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-	GtkWidget* titlelbl = gtk_label_new("Create a channel");
-	gtk_box_append(GTK_BOX(mainbox), titlelbl);
-	gtk_window_set_child(GTK_WINDOW(dialog), mainbox);
-	gtk_window_present(GTK_WINDOW(dialog));
-	GtkWidget* contentbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-	gtk_widget_set_vexpand(contentbox, 1);
-	GtkWidget* namefieldlabel = gtk_label_new("Channel name");
-	gtk_box_append(GTK_BOX(contentbox), namefieldlabel);
-	GtkWidget* namefield = gtk_entry_new();
-	gtk_entry_set_placeholder_text(GTK_ENTRY(namefield), "my-channel");
-	gtk_box_append(GTK_BOX(contentbox), namefield);
-	gtk_box_append(GTK_BOX(mainbox), contentbox);
-	GtkWidget* typefieldlbl = gtk_label_new("Channel type");
-	gtk_box_append(GTK_BOX(contentbox), typefieldlbl);
-	GtkWidget* textchoice = gtk_check_button_new_with_label("Text Channel");
-	gtk_box_append(GTK_BOX(contentbox), textchoice);
-	GtkWidget* btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-	GtkWidget* cancelbtn = gtk_button_new_with_label("Cancel");
-	g_signal_connect(cancelbtn, "clicked", G_CALLBACK(ChannelCancelBtnCallback),
-					 NULL);
-	GtkWidget* nextbtn = gtk_button_new_with_label("Create");
-	ChannelCreateBtnCtx* createctx = malloc(sizeof(ChannelCreateBtnCtx));
-	createctx->nameentry = namefield;
-	createctx->menuctx = *(ChannelMenuCtx*)user_data;
-	g_signal_connect(nextbtn, "clicked", G_CALLBACK(ChannelCreateBtnCallback),
-					 createctx);
-	gtk_widget_set_halign(btnbox, GTK_ALIGN_END);
-	gtk_box_append(GTK_BOX(btnbox), cancelbtn);
-	gtk_box_append(GTK_BOX(btnbox), nextbtn);
-	gtk_box_append(GTK_BOX(mainbox), btnbox);
-	free(user_data);
-}
-static void OnCreateCategory(GSimpleAction* action, GVariant* param,
-							 gpointer user_data) {
-	GtkWidget* dialog = gtk_application_window_new(global_app);
-	gtk_window_set_default_size(GTK_WINDOW(dialog), 300, 400);
-	GtkWidget* mainbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-	GtkWidget* titlelbl = gtk_label_new("Create a category");
-	gtk_box_append(GTK_BOX(mainbox), titlelbl);
-	gtk_window_set_child(GTK_WINDOW(dialog), mainbox);
-	gtk_window_present(GTK_WINDOW(dialog));
-	GtkWidget* contentbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-	gtk_widget_set_vexpand(contentbox, 1);
-	GtkWidget* namefieldlabel = gtk_label_new("Category name");
-	gtk_box_append(GTK_BOX(contentbox), namefieldlabel);
-	GtkWidget* namefield = gtk_entry_new();
-	gtk_entry_set_placeholder_text(GTK_ENTRY(namefield), "my-channel");
-	gtk_box_append(GTK_BOX(contentbox), namefield);
-	gtk_box_append(GTK_BOX(mainbox), contentbox);
-	GtkWidget* btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-	GtkWidget* cancelbtn = gtk_button_new_with_label("Cancel");
-	g_signal_connect(cancelbtn, "clicked", G_CALLBACK(ChannelCancelBtnCallback),
-					 NULL);
-	GtkWidget* nextbtn = gtk_button_new_with_label("Create");
-	ChannelCreateBtnCtx* createctx = malloc(sizeof(ChannelCreateBtnCtx));
-	createctx->nameentry = namefield;
-	createctx->menuctx = *(ChannelMenuCtx*)user_data;
-	g_signal_connect(nextbtn, "clicked", G_CALLBACK(CategoryCreateBtnCallback),
-					 createctx);
-	gtk_widget_set_halign(btnbox, GTK_ALIGN_END);
-	gtk_box_append(GTK_BOX(btnbox), cancelbtn);
-	gtk_box_append(GTK_BOX(btnbox), nextbtn);
-	gtk_box_append(GTK_BOX(mainbox), btnbox);
-	free(user_data);
-}
-
-static GtkWidget* MakeChannelContextMenu(GtkWidget* attach_widget,
-										 ChannelMenuCtx* ctx) {
-	GSimpleActionGroup* group = g_simple_action_group_new();
-	GSimpleAction* create_action = g_simple_action_new("create-channel", NULL);
-	g_signal_connect(create_action, "activate", G_CALLBACK(OnCreateChannel),
-					 ctx);
-	g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(create_action));
-
-	GSimpleAction* create_cat_action =
-		g_simple_action_new("create-category", NULL);
-	g_signal_connect(create_cat_action, "activate",
-					 G_CALLBACK(OnCreateCategory), ctx);
-	g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(create_cat_action));
-
-	gtk_widget_insert_action_group(attach_widget, "channelmenu",
-								   G_ACTION_GROUP(group));
-	g_object_unref(group);
-
-	GMenu* menu = g_menu_new();
-	g_menu_append(menu, "Create Channel", "channelmenu.create-channel");
-	GMenu* catmenu = g_menu_new();
-	g_menu_append(menu, "Create Category", "channelmenu.create-category");
-
-	GtkWidget* popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
-	gtk_widget_set_parent(popover, attach_widget);
-	gtk_popover_set_has_arrow(GTK_POPOVER(popover), FALSE);
-
-	g_object_unref(menu);
-	return popover;
-}
-static void ShowChannelContextMenu(GtkWidget* attach_widget,
-								   const char* category, double x, double y) {
-	GtkWidget* old =
-		g_object_get_data(G_OBJECT(attach_widget), "channel-context-popover");
-	if (old) {
-		gtk_widget_unparent(old);
-	}
-
-	ChannelMenuCtx* ctx = malloc(sizeof(ChannelMenuCtx));
-	ctx->space = curSpace;
-	ctx->category = category ? strdup(category) : NULL;
-
-	GtkWidget* popover = MakeChannelContextMenu(attach_widget, ctx);
-	g_object_set_data(G_OBJECT(attach_widget), "channel-context-popover",
-					  popover);
-
-	GdkRectangle rect = {(int)x, (int)y, 1, 1};
-	gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
-	gtk_widget_set_halign(GTK_WIDGET(popover), GTK_ALIGN_START);
-	gtk_popover_popup(GTK_POPOVER(popover));
-}
-static void OnChannelSidebarRightClick(GtkGestureClick* gesture, int n_press,
-									   double x, double y, gpointer user_data) {
-	GtkWidget* widget =
-		gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-	ShowChannelContextMenu(widget, NULL, x, y);
-	gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-}
-static void OnCategoryHeaderRightClick(GtkGestureClick* gesture, int n_press,
-									   double x, double y, gpointer user_data) {
-	GtkWidget* widget =
-		gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-	char* categoryname = g_object_get_data(G_OBJECT(widget), "category-name");
-	ShowChannelContextMenu(widget, categoryname, x, y);
-	gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-}
-static void OnCategoryToggle(GtkGestureClick* gesture, int n_press, double x,
-							 double y, gpointer user_data) {
-	GtkWidget* content_box = GTK_WIDGET(user_data);
-	GtkWidget* toggle_label =
-		g_object_get_data(G_OBJECT(content_box), "toggle-label");
-	gboolean visible = gtk_widget_get_visible(content_box);
-	gtk_widget_set_visible(content_box, !visible);
-	gtk_label_set_text(GTK_LABEL(toggle_label), visible ? "+" : "-");
-}
-
-static void BuildChannelTree(GtkWidget* parent_box, YampChannel** channels,
-							 int nchannels, int depth, GtkWidget* root_box) {
-	GtkWidget* current_listbox = NULL;
-	if (!channels) {
-		return;
-	}
-	for (int i = 0; i < nchannels; i++) {
-		YampChannel* ch = channels[i];
-		gboolean is_category = ch->type == YAMP_SPACE_CATEGORY;
-
-		if (is_category) {
-			current_listbox = NULL;
-
-			GtkWidget* header_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-			gtk_widget_set_margin_start(header_row, depth * 12);
-			gtk_widget_set_cursor_from_name(header_row, "pointer");
-			gtk_widget_add_css_class(header_row, "channel-category");
-			GtkWidget* toggle_label = gtk_label_new("-");
-			gtk_widget_set_valign(toggle_label, GTK_ALIGN_CENTER);
-			gtk_widget_add_css_class(toggle_label, "channel-category");
-			gtk_widget_set_cursor_from_name(toggle_label, "pointer");
-
-			GtkWidget* header = gtk_label_new(ch->name);
-			gtk_widget_set_halign(header, GTK_ALIGN_START);
-			gtk_widget_add_css_class(header, "channel-category");
-
-			gtk_box_append(GTK_BOX(header_row), toggle_label);
-			gtk_box_append(GTK_BOX(header_row), header);
-			gtk_box_append(GTK_BOX(parent_box), header_row);
-
-			GtkWidget* content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-			gtk_box_append(GTK_BOX(parent_box), content_box);
-
-			g_object_set_data(G_OBJECT(content_box), "toggle-label",
-							  toggle_label);
-
-			GtkGesture* toggleclick = gtk_gesture_click_new();
-			g_signal_connect(toggleclick, "pressed",
-							 G_CALLBACK(OnCategoryToggle), content_box);
-			gtk_widget_add_controller(header_row,
-									  GTK_EVENT_CONTROLLER(toggleclick));
-
-			g_object_set_data_full(G_OBJECT(header_row), "category-name",
-								   g_strdup(ch->id), g_free);
-
-			GtkGesture* catclick = gtk_gesture_click_new();
-			gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(catclick),
-										  GDK_BUTTON_SECONDARY);
-			g_signal_connect(catclick, "pressed",
-							 G_CALLBACK(OnCategoryHeaderRightClick), NULL);
-			gtk_widget_add_controller(header_row,
-									  GTK_EVENT_CONTROLLER(catclick));
-
-			BuildChannelTree(content_box, ch->children, ch->nchildren,
-							 depth + 1, root_box);
-
-			current_listbox = NULL;
-		} else {
-			if (current_listbox == NULL) {
-				current_listbox = gtk_list_box_new();
-				gtk_list_box_set_selection_mode(GTK_LIST_BOX(current_listbox),
-												GTK_SELECTION_SINGLE);
-				gtk_widget_set_margin_start(current_listbox, depth * 16);
-				g_signal_connect(current_listbox, "row-selected",
-								 G_CALLBACK(OnChannelSelected), NULL);
-				gtk_box_append(GTK_BOX(parent_box), current_listbox);
-			}
-
-			YampChannel* chdup = DupChannelObject(ch);
-			char* dispname = ch->name;
-			GtkWidget* lbr = gtk_list_box_row_new();
-			GtkWidget* label = gtk_label_new(dispname);
-			gtk_widget_set_halign(label, GTK_ALIGN_START);
-			gtk_widget_add_css_class(lbr, "channel-row");
-			GtkWidget* contentbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-			GtkWidget* hashtag =
-				gtk_image_new_from_icon_name("text-channel-symbolic");
-			gtk_box_append(GTK_BOX(contentbox), hashtag);
-			gtk_box_append(GTK_BOX(contentbox), label);
-			gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(lbr), contentbox);
-			gtk_list_box_append(GTK_LIST_BOX(current_listbox), lbr);
-
-			gtk_widget_set_margin_top(label, 5);
-			gtk_widget_set_margin_bottom(label, 5);
-
-			g_object_set_data(G_OBJECT(lbr), "channel", chdup);
-		}
-	}
-}
 static void OnInviteBtnClicked(GtkButton* btn, gpointer data) {
 	if (!curSpace)
 		return;
@@ -928,60 +363,73 @@ static void OnInviteBtnClicked(GtkButton* btn, gpointer data) {
 	SpawnInviteDialog(GTK_WINDOW(main_window), curSpace,
 					  sp ? sp->displayname : NULL);
 }
-int MainThreadChannelCB(gpointer data) {
-	ChannelFetchPayload* cfp = data;
+int LoadSpaceChannels(YampChannel** channels, int nchannels) {
 	GtkWidget* child;
 
+	channeltree_root = NULL;
 	while ((child = gtk_widget_get_first_child(ChannelSidebar)) != NULL)
 		gtk_widget_unparent(child);
 	GtkWidget* headerbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 	gtk_widget_set_size_request(headerbox, -1, TOPBAR_HEIGHT);
 	gtk_widget_set_valign(headerbox, GTK_ALIGN_START);
 	GtkWidget* headerlbl = gtk_label_new(GetSpaceObject(curSpace)->displayname);
-	gtk_widget_set_size_request(headerlbl, 180, -1);
+	gtk_widget_set_size_request(headerlbl, 240, -1);
 	gtk_label_set_ellipsize(GTK_LABEL(headerlbl), PANGO_ELLIPSIZE_END);
 	gtk_label_set_xalign(GTK_LABEL(headerlbl),
-						 0.0); // keep text left-aligned as it shrinks48
+						 0.0); // keep text left-aligned as it shrinks
 	gtk_widget_set_hexpand(headerlbl, FALSE);
 	gtk_box_append(GTK_BOX(headerbox), headerlbl);
 
-	GtkWidget* invbtn = gtk_button_new();
+	GtkWidget* invbtn = gtk_button_new_from_icon_name("invite-symbolic");
 	g_signal_connect(invbtn, "clicked", G_CALLBACK(OnInviteBtnClicked), NULL);
-	GtkWidget* invimg = gtk_image_new_from_icon_name("invite-symbolic");
-	gtk_button_set_child(GTK_BUTTON(invbtn), invimg);
+	gtk_widget_set_halign(invbtn, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(invbtn, GTK_ALIGN_CENTER);
 	gtk_box_append(GTK_BOX(headerbox), invbtn);
 	gtk_size_group_add_widget(topbar_group, headerbox);
 	gtk_box_append(GTK_BOX(ChannelSidebar), headerbox);
-	GtkWidget* channellist = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-	BuildChannelTree(channellist, cfp->channels, cfp->nchannels, 0,
-					 channellist);
-	gtk_box_append(GTK_BOX(ChannelSidebar), channellist);
+	GtkWidget* channellist_scr = gtk_scrolled_window_new();
+	gtk_widget_set_hexpand(channellist_scr, TRUE);
+	gtk_widget_set_vexpand(channellist_scr, TRUE);
 
-	free(data);
+	GtkWidget* channellist = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	g_object_set_data(G_OBJECT(channellist), "depth", GINT_TO_POINTER(0));
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(channellist_scr),
+								  channellist);
+
+	GtkGesture* sidebarclick = gtk_gesture_click_new();
+	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(sidebarclick),
+								  GDK_BUTTON_SECONDARY);
+	g_signal_connect(sidebarclick, "pressed",
+					 G_CALLBACK(OnChannelSidebarRightClick), NULL);
+	gtk_widget_add_controller(ChannelSidebar,
+							  GTK_EVENT_CONTROLLER(sidebarclick));
+
+	BuildChannelTree(channellist, channels, nchannels, 0);
+	channeltree_root = channellist;
+	g_free(channeltree_space);
+	channeltree_space = g_strdup(curSpace);
+	gtk_box_append(GTK_BOX(ChannelSidebar), channellist_scr);
+	return G_SOURCE_REMOVE;
+}
+int MainThreadChannelCB(ChannelFetchPayload* dat){
+	LoadSpaceChannels(dat->channels, dat->nchannels);
+	UpdateSpaceChannelCache(dat->channels, dat->nchannels, curSpace);
+	free(dat);
 	return G_SOURCE_REMOVE;
 }
 void onYAMPChannelsFetched(YampChannel** channels, int nchannels) {
 	ChannelFetchPayload* cfp = malloc(sizeof(ChannelFetchPayload));
+	
 	cfp->nchannels = nchannels;
-	cfp->channels = channels;
-	g_idle_add(MainThreadChannelCB, cfp);
-}
-void onYAMPChannelsUpdated(YampChannel** channels, int n, char* space) {
-	if (!curSpace || !space || strcmp(space, curSpace) != 0)
-		return;
-	ChannelFetchPayload* cfp = malloc(sizeof(ChannelFetchPayload));
-	cfp->nchannels = n;
-	cfp->channels = malloc(sizeof(YampChannel*) * (n ? n : 1));
-	for (int i = 0; i < n; i++)
-		cfp->channels[i] = DupChannelObject(channels[i]);
-	g_idle_add(MainThreadChannelCB, cfp);
+	cfp->channels = DupChannelArray(channels,nchannels);
+	g_idle_add(G_SOURCE_FUNC(MainThreadChannelCB), cfp);
 }
 typedef struct {
 	char* id;
 	YampStatus* stat;
 } StatusUpdatePayload;
 
-static const char* StatusToColor(const char* statusStr) {
+const char* StatusToColor(const char* statusStr) {
 	if (strcmp(statusStr, "online") == 0)
 		return "108020";
 	if (strcmp(statusStr, "dnd") == 0)
@@ -1049,125 +497,10 @@ void DMsListTopPagesCB(GtkListBox* lb, GtkListBoxRow* lbr, void* data) {
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "friends");
 }
 
-char* JoinUsernames(YampUser** people, int n) {
-	size_t len = 1;
-	for (int i = 0; i < n; i++) {
-		const char* nm = people[i]->displayname ? people[i]->displayname
-												: people[i]->username;
-		len += strlen(nm) + (i ? 2 : 0);
-	}
-
-	char* out = malloc(len);
-	if (!out)
-		return NULL;
-
-	char* p = out;
-	for (int i = 0; i < n; i++) {
-		const char* nm = people[i]->displayname ? people[i]->displayname
-												: people[i]->username;
-		if (i) {
-			*p++ = ',';
-			*p++ = ' ';
-		}
-		size_t l = strlen(nm);
-		memcpy(p, nm, l);
-		p += l;
-	}
-	*p = '\0';
-	return out;
-}
-int InsertConvIntoList(YampChannel* conv) {
-	if (conv->type == YAMP_DM) {
-		YampUser** members = conv->people;
-		YampUser* usr; // the other user
-		if (strcmp(members[0]->id, curUserID) == 0) {
-			usr = members[1];
-		} else {
-			usr = members[0];
-		}
-		char* dispname = usr->displayname ? usr->displayname : usr->username;
-		YampUser* heapusr = DupUserObject(usr);
-		InsertUserObject(heapusr->id, heapusr);
-		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-		GtkWidget* LBRow = gtk_list_box_row_new();
-		GtkWidget* LBRowLabel = gtk_label_new(dispname);
-		GtkWidget* Pfp;
-		if (usr->pfp && strlen(usr->pfp)) {
-			Pfp = gtk_image_new();
-			gtk_widget_add_css_class(Pfp, "avatar");
-			gtk_widget_set_overflow(Pfp, GTK_OVERFLOW_HIDDEN);
-
-			char* fetchurl = ProcessAttachmentURL(usr->pfp);
-			char* pfp_path = AvatarCachePath(fetchurl);
-			LoadAvatarAsync(Pfp, fetchurl, pfp_path, 32);
-			free(fetchurl);
-			InsertPfpPath(usr->id, pfp_path);
-		} else {
-			char pfppath[37];
-			sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
-					GetDefaultPfp(usr->id));
-			Pfp = gtk_image_new_from_resource(pfppath);
-			gtk_widget_add_css_class(Pfp, "avatar");
-			gtk_widget_set_overflow(Pfp, GTK_OVERFLOW_HIDDEN);
-		}
-		char* statusClr = StatusToColor(usr->status->status);
-		GtkWidget* statusframe = WrapInStatusFrame(Pfp, 32, statusClr);
-		g_object_set_data_full(G_OBJECT(statusframe), "user-id",
-							   g_strdup(usr->id), g_free);
-		g_object_set_data(G_OBJECT(LBRowLabel), "id", heapusr->id);
-		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
-						  DupChannelObject(conv));
-		g_object_set_data_full(G_OBJECT(LBRowLabel), "dpyname",
-							   g_strdup(dispname), g_free);
-		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv->type);
-		gtk_box_append(GTK_BOX(ItemBox), statusframe);
-		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
-		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
-		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
-		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
-	} else if (conv->type == YAMP_GC) {
-		YampUser** members = conv->people;
-		char* dispname =
-			conv->name ? conv->name : JoinUsernames(members, conv->npeople);
-		GtkWidget* ItemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-		GtkWidget* LBRow = gtk_list_box_row_new();
-		GtkWidget* LBRowLabel = gtk_label_new(dispname);
-		GtkWidget* Pfp;
-		if (conv->icon) {
-		} else {
-			char pfppath[37];
-			sprintf(pfppath, "/org/yampen/assets/pfps/default%i.png",
-					GetDefaultPfp(conv->id));
-			Pfp = gtk_image_new_from_resource(pfppath);
-		}
-
-		GtkCssProvider* provider = gtk_css_provider_new();
-		char style[60];
-		sprintf(style, "image { -gtk-icon-size: 32px; }");
-		gtk_css_provider_load_from_string(provider, style);
-		gtk_style_context_add_provider(gtk_widget_get_style_context(Pfp),
-									   GTK_STYLE_PROVIDER(provider),
-									   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-		g_object_set_data(G_OBJECT(LBRowLabel), "channel",
-						  DupChannelObject(conv));
-		g_object_set_data(G_OBJECT(LBRowLabel), "id", strdup(conv->id));
-		g_object_set_data(G_OBJECT(LBRowLabel), "type", (void*)conv->type);
-		g_object_set_data_full(G_OBJECT(LBRowLabel), "members",
-							   MemberSetCopy(conv->people, conv->npeople),
-							   MemberSetFree);
-		g_object_set_data(G_OBJECT(LBRowLabel), "dpyname", dispname);
-		gtk_box_append(GTK_BOX(ItemBox), Pfp);
-		gtk_box_append(GTK_BOX(ItemBox), LBRowLabel);
-		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(LBRow), ItemBox);
-		gtk_widget_set_halign(LBRowLabel, GTK_ALIGN_START);
-		gtk_list_box_append(GTK_LIST_BOX(dmlist), LBRow);
-	}
-	return 1;
-}
-void OnGCInitMembersSelected(YampUser* users, int nusers) {
+void OnGCInitMembersSelected(YampUser** users, int nusers) {
 	char** initmembers = malloc(sizeof(char*) * nusers);
 	for (int i = 0; i < nusers; i++) {
-		initmembers[i] = users[i].id;
+		initmembers[i] = users[i]->id;
 	}
 	YAMPCreateGC(mainsock, initmembers, nusers, NULL);
 	free(initmembers);
@@ -1178,13 +511,29 @@ void OnCreateGCBtnClicked(GtkButton* btn, gpointer user_data) {
 }
 void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 	gtk_widget_add_css_class(dmsbutton, "active");
-	gtk_widget_remove_css_class(selectedspacebtn, "active");
+	if (selectedspacebtn)
+		gtk_widget_remove_css_class(selectedspacebtn, "active");
 	selectedspacebtn = NULL;
 	if (listmode == FALSE) {
+		GListModel* ctrls = gtk_widget_observe_controllers(ChannelSidebar);
+		for (guint i = 0; i < g_list_model_get_n_items(ctrls); i++) {
+			GtkEventController* c = g_list_model_get_item(ctrls, i);
+			if (GTK_IS_GESTURE_CLICK(c)) {
+				gtk_widget_remove_controller(ChannelSidebar, c);
+				g_object_unref(c);
+				break;
+			}
+			g_object_unref(c);
+		}
+		g_object_unref(ctrls);
 		GtkWidget* child;
 		while ((child = gtk_widget_get_first_child(ChannelSidebar)) != NULL)
 			gtk_widget_unparent(child);
+		GtkWidget* scrolledwnd = gtk_scrolled_window_new();
+		gtk_widget_set_hexpand(scrolledwnd, TRUE);
+		gtk_widget_set_vexpand(scrolledwnd, TRUE);
 		dmlist = gtk_list_box_new();
+		gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolledwnd), dmlist);
 		GtkWidget* toptabs = gtk_list_box_new();
 		GtkWidget* friendscontent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
 		gtk_box_append(GTK_BOX(friendscontent),
@@ -1217,7 +566,7 @@ void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 		gtk_box_append(GTK_BOX(dmheader_row), dmheader);
 		gtk_box_append(GTK_BOX(dmheader_row), newgc_btn);
 		gtk_box_append(GTK_BOX(ChannelSidebar), dmheader_row);
-		gtk_box_append(GTK_BOX(ChannelSidebar), dmlist);
+		gtk_box_append(GTK_BOX(ChannelSidebar), scrolledwnd);
 		g_signal_connect(dmlist, "row-selected", G_CALLBACK(OnDMRowSelected),
 						 NULL);
 		for (int i = 0; i < ncached_convs; i++) {
@@ -1227,7 +576,6 @@ void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 	}
 }
 char FetchedUserProfile = false;
-GtkWidget* UsernameLabel;
 void SendFQBtnCB(GtkButton* btn, void* data) {
 	YAMPSendFriendReq(
 		mainsock,
@@ -1238,10 +586,10 @@ void SetupFriendsPane(GtkWidget* friendspane) {
 	GtkWidget* mainvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
 	GtkWidget* fqsendarea = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
 	GtkWidget* fqlabel = gtk_label_new(NULL);
-	gtk_widget_set_margin_start(mainvbox, 8);
-	gtk_widget_set_margin_end(mainvbox, 8);
-	gtk_widget_set_margin_top(mainvbox, 8);
-	gtk_widget_set_margin_bottom(mainvbox, 8);
+	gtk_widget_set_margin_start(mainvbox, 16);
+	gtk_widget_set_margin_end(mainvbox, 16);
+	gtk_widget_set_margin_top(mainvbox, 16);
+	gtk_widget_set_margin_bottom(mainvbox, 16);
 	gtk_label_set_markup(
 		GTK_LABEL(fqlabel),
 		"<span size=\"large\" weight=\"bold\">Send a friend request</span>");
@@ -1251,11 +599,16 @@ void SetupFriendsPane(GtkWidget* friendspane) {
 								   "username or username@instance.xyz");
 	gtk_widget_set_hexpand(fqsendarea, 1);
 	gtk_widget_set_hexpand(fqsendname, 1);
-	GtkWidget* fqsendbtn = gtk_button_new_with_label("Send");
+	GtkWidget* fqsendbtn = gtk_button_new_with_label("Send!");
 	g_signal_connect(fqsendbtn, "clicked", G_CALLBACK(SendFQBtnCB), fqsendname);
 	gtk_box_append(GTK_BOX(fqsendarea), fqsendname);
 	gtk_box_append(GTK_BOX(fqsendarea), fqsendbtn);
 	gtk_box_append(GTK_BOX(mainvbox), fqsendarea);
+
+	GtkWidget* list_scr = gtk_scrolled_window_new();
+	GtkWidget* friendslist = gtk_list_box_new();
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scr), friendslist);
+
 	gtk_box_append(GTK_BOX(friendspane), mainvbox);
 	gtk_widget_set_hexpand(mainvbox, 1);
 	gtk_widget_set_vexpand(mainvbox, 1);
@@ -1541,34 +894,6 @@ typedef struct {
 	YampUser* users;
 	int nusers;
 } MainThreadFriendPayload;
-static gboolean MainThreadFriendCB(gpointer data) {
-	/*
-	MainThreadFriendPayload* payload = data;
-	GtkWidget* child;
-	while ((child = gtk_widget_get_first_child(ChannelSidebar)) != NULL)
-		gtk_widget_unparent(child);
-	dmlist = gtk_list_box_new();
-	GtkWidget* toptabs = gtk_list_box_new();
-	GtkWidget* friendscontent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-	gtk_box_append(GTK_BOX(friendscontent),
-				   gtk_image_new_from_icon_name("dms"));
-	gtk_box_append(GTK_BOX(friendscontent), gtk_label_new("Friends"));
-	GtkWidget* friendstab = gtk_list_box_row_new();
-	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(friendstab), friendscontent);
-	g_signal_connect(toptabs, "row-selected", G_CALLBACK(DMsListTopPagesCB),
-					 NULL);
-	gtk_list_box_append(GTK_LIST_BOX(toptabs), friendstab);
-	gtk_box_append(GTK_BOX(ChannelSidebar), toptabs);
-	gtk_box_append(GTK_BOX(ChannelSidebar), dmlist);
-	g_signal_connect(dmlist, "row-selected", G_CALLBACK(OnDMRowSelected), NULL);
-	for (int i = 0; i < payload->nusers; i++) {
-		// InsertFriendIntoList(payload->users[i]);
-	}
-	free(payload->users);
-	free(payload);
-	return G_SOURCE_REMOVE;
-	*/
-}
 gboolean MainThreadNewFriend(void* rawfriend) {
 	YampUser* friend = rawfriend;
 	// InsertFriendIntoList(*friend);
@@ -1579,21 +904,120 @@ void onYAMPNewFriend(YampUser* friend) {
 	YampUser* heapfriend = DupUserObject(friend);
 	g_idle_add(MainThreadNewFriend, heapfriend);
 }
-gboolean MainThreadNewConversation(YampChannel* heapconv) {
-	InsertConvIntoList(heapconv);
-	free(heapconv);
+GtkWidget* RecursiveFindWidgetByData(GtkWidget* parent, const char* key,
+									 const char* val) {
+	for (GtkWidget* w = gtk_widget_get_first_child(parent); w;
+		 w = gtk_widget_get_next_sibling(w)) {
+		const char* v = g_object_get_data(G_OBJECT(w), key);
+		if (v && strcmp(v, val) == 0)
+			return w;
+		GtkWidget* r = RecursiveFindWidgetByData(w, key, val);
+		if (r)
+			return r;
+	}
+	return NULL;
+}
+
+static void InsertSpaceChannel(YampChannel* ch) {
+	if (!channeltree_root || !channeltree_space || !ch->space ||
+		strcmp(ch->space, channeltree_space) != 0)
+		return;
+	if (RecursiveFindWidgetByData(channeltree_root, "channel-id", ch->id))
+		return;
+
+	GtkWidget* container = channeltree_root;
+	int depth = 0;
+	if (ch->parent && *ch->parent) {
+		container = RecursiveFindWidgetByData(channeltree_root, "category-id",
+											  ch->parent);
+		if (!container)
+			return;
+		depth =
+			GPOINTER_TO_INT(g_object_get_data(G_OBJECT(container), "depth"));
+	}
+
+	GtkWidget* entry = BuildChannelEntry(ch, depth);
+
+	int pos = ch->pos < 0 ? G_MAXINT : ch->pos;
+	GtkWidget* prev = NULL;
+	GtkWidget* w = gtk_widget_get_first_child(container);
+	for (int i = 0; w && i < pos; i++) {
+		prev = w;
+		w = gtk_widget_get_next_sibling(w);
+	}
+	gtk_box_insert_child_after(GTK_BOX(container), entry, prev);
+}
+gboolean MainThreadNewChannel(YampChannel* heapconv) {
+	if (heapconv->type == YAMP_DM || heapconv->type == YAMP_GC) {
+		InsertConvIntoList(heapconv);
+		cached_convs =
+			realloc(cached_convs, sizeof(YampChannel*) * (ncached_convs + 1));
+		cached_convs[ncached_convs] = DupChannelObject(heapconv);
+		ncached_convs++;
+	} else if (YAMP_IS_SPACE_TYPE(heapconv->type)) {
+		InsertSpaceChannel(heapconv);
+	}
+	FreeChannelObject(heapconv);
 	return G_SOURCE_REMOVE;
 }
-void onYAMPNewConversation(YampChannel* conv) {
+void onYAMPNewChannel(YampChannel* conv) {
 	YampChannel* heapconv = DupChannelObject(conv);
-	g_idle_add(G_SOURCE_FUNC(MainThreadNewConversation), heapconv);
+	g_idle_add(G_SOURCE_FUNC(MainThreadNewChannel), heapconv);
 }
-void onYAMPFriendsListed(YampUser* friends, int nfriends) {
-	MainThreadFriendPayload* payload = malloc(sizeof(MainThreadFriendPayload));
-	payload->users = friends;
-	payload->nusers = nfriends;
-	g_idle_add(MainThreadFriendCB, payload);
+gboolean MainThreadDeleteChannel(char* id) {
+	// since we only get an ID, we try to just check everywhere until we destroy
+	// it space channels arnet cached yet, you'd need to invalidate cache once
+	// its found
+	if (DeleteChannelEntry(channeltree_root, id)) {
+		return G_SOURCE_REMOVE;
+	}
+	for (int i = 0; i < ncached_convs; i++) {
+		if (strcmp(cached_convs[i]->id, id) == 0) {
+			// be gone, jerk!
+			DeleteConvFromList(id);
+			FreeChannelObject(cached_convs[i]);
+
+			ncached_convs--;
+
+			if (i != ncached_convs) {
+				cached_convs[i] = cached_convs[ncached_convs];
+			}
+			break;
+		}
+	}
+	free(id);
+	return G_SOURCE_REMOVE;
 }
+void onYAMPChannelDeleted(char* id) {
+	g_idle_add(G_SOURCE_FUNC(MainThreadDeleteChannel), dup0(id));
+}
+
+
+gboolean MainThreadChannelUpdated(YampChannel* heapconv) {
+	if (heapconv->type == YAMP_DM || heapconv->type == YAMP_GC) {
+		if (heapconv->type == YAMP_GC &&
+			strcmp(heapconv->id, currentChannel->id) == 0) {
+			SetMemberOwner(heapconv->owner);
+		}
+		for (int i = 0; i < ncached_convs; i++) {
+			if (strcmp(cached_convs[i]->id, heapconv->id) == 0) {
+				FreeChannelObject(cached_convs[i]);
+				cached_convs[i] = DupChannelObject(heapconv);
+				break;
+			}
+		}
+		ModifyConvInList(heapconv);
+	} else if (YAMP_IS_SPACE_TYPE(heapconv->type)) {
+	}
+	FreeChannelObject(heapconv);
+	return G_SOURCE_REMOVE;
+}
+void onYAMPChannelUpdated(YampChannel* conv) {
+	YampChannel* heapconv = DupChannelObject(conv);
+	g_idle_add(G_SOURCE_FUNC(MainThreadChannelUpdated), heapconv);
+}
+
+void onYAMPFriendsListed(YampUser* friends, int nfriends) {}
 typedef struct {
 	char* id;
 	char* name;
@@ -1630,16 +1054,13 @@ static gboolean receive_im_main_thread(gpointer user_data) {
 
 	if (currentChannel &&
 		strcmp(currentChannel->id, payload->msg->channel) == 0) {
-		char* id;
 		YampUser* usr = payload->msg->author;
-		id = usr->id;
 		if (!usr) {
 			return G_SOURCE_REMOVE;
 		}
 
 		TypingRemove(usr->id);
 
-		char* dispname = usr->displayname ? usr->displayname : usr->username;
 		if (payload->nonce != -1) {
 			GtkWidget* silhouette = GetMessageSilhouettes(payload->nonce);
 			if (silhouette) {
@@ -1677,13 +1098,10 @@ gboolean HistoryLoadedMainThread(HistoryLoadPayload* payload) {
 		PushChannelBanner(chatarea, currentChannel);
 	}
 	for (int i = 0; i < payload->nmsgs; i++) {
-		char* id;
 		YampUser* usr = payload->msgs[i]->author;
-		id = usr->id;
 		if (!usr) {
 			return G_SOURCE_REMOVE;
 		}
-		char* dispname = usr->displayname ? usr->displayname : usr->username;
 		PushUIMessage(chatscroll, chatarea, payload->msgs[i], 0);
 	}
 	ScrollChatToBottom();
@@ -1930,9 +1348,9 @@ int ProfileUpdateMainThread(YampUser* new_profile) {
 
 	YampUser* usr = GetUserObject(new_profile->id);
 	free(usr->displayname);
-	usr->displayname = strdup(new_profile->displayname);
+	usr->displayname = dup0(new_profile->displayname);
 	free(usr->pfp);
-	usr->pfp = strdup(new_profile->pfp);
+	usr->pfp = dup0(new_profile->pfp);
 
 
 	FreeUserObject(new_profile);
@@ -1942,21 +1360,96 @@ void onYAMPProfileUpdated(YampUser* new_profile) {
 	g_idle_add(G_SOURCE_FUNC(ProfileUpdateMainThread),
 			   DupUserObject(new_profile));
 }
+typedef struct {
+	YampUser* usr;
+	char* channel;
+} MemberEventPayload;
+void MemberLeftMainThread(MemberEventPayload* pld) {
+	YampChannel* channel = NULL;
+	for (int i = 0; i < ncached_convs; i++) {
+		if (strcmp(pld->channel, cached_convs[i]->id) == 0) {
+			channel = cached_convs[i];
+			break;
+		}
+	}
+	if (!channel) {
+		FreeUserObject(pld->usr);
+		free(pld->channel);
+		return;
+	}
+
+	for (int i = 0; i < channel->npeople; i++) {
+		if (strcmp(channel->people[i]->id, pld->usr->id) == 0) {
+			memmove(&channel->people[i], &channel->people[i + 1],
+					sizeof(YampUser*) * (channel->npeople - i - 1));
+			channel->npeople--;
+			break;
+		}
+	}
+
+	if (currentChannel && strcmp(currentChannel->id, pld->channel) == 0) {
+		RemoveMember(pld->usr->id);
+	}
+
+	FreeUserObject(pld->usr);
+	free(pld->channel);
+}
+void MemberJoinedMainThread(MemberEventPayload* pld) {
+	char* owner_id = NULL;
+	YampChannel* channel = NULL;
+	for (int i = 0; i < ncached_convs; i++) {
+		if (strcmp(pld->channel, cached_convs[i]->id) == 0) {
+			channel = cached_convs[i];
+			owner_id = cached_convs[i]->owner;
+			break;
+		}
+	}
+	if (!channel) {
+		FreeUserObject(pld->usr);
+		free(pld->channel);
+		return;
+	}
+	channel->people =
+		realloc(channel->people, sizeof(YampUser*) * (channel->npeople + 1));
+	channel->people[channel->npeople] = DupUserObject(pld->usr);
+	InsertUserObject(pld->usr->id, channel->people[channel->npeople]);
+	channel->npeople++;
+	if (strcmp(currentChannel->id, pld->channel) == 0) {
+		AppendMember(pld->usr, curUserID);
+	}
+	FreeUserObject(pld->usr);
+	free(pld->channel);
+}
+void onYAMPMemberJoined(YampUser* user, char* channel) {
+	MemberEventPayload* payload = malloc(sizeof(*payload));
+	payload->channel = strdup(channel);
+	payload->usr = DupUserObject(user);
+	g_idle_add(G_SOURCE_FUNC(MemberJoinedMainThread), payload);
+}
+void onYAMPMemberLeft(YampUser* user, char* channel) {
+	MemberEventPayload* payload = malloc(sizeof(*payload));
+	payload->channel = strdup(channel);
+	payload->usr = DupUserObject(user);
+	g_idle_add(G_SOURCE_FUNC(MemberLeftMainThread), payload);
+}
 
 static YampEventListener yamp_listener = {
 	.onReceiveIM = onYAMPReceiveIM,
 	.onStatusUpdate = onYAMPStatusUpdate,
 	.onFriendRequestReceived = onYAMPFriendRequestReceived,
-	.onChannelsUpdated = onYAMPChannelsUpdated,
 	.onNewSpace = onYAMPNewSpace,
 	.onNewFriend = onYAMPNewFriend,
-	.onNewConversation = onYAMPNewConversation,
+	.onNewChannel = onYAMPNewChannel,
+	.onChannelUpdated = onYAMPChannelUpdated,
+	.onChannelDeleted = onYAMPChannelDeleted,
 	.onTyping = onYAMPTyping,
 	.onMessageDeleted = onYAMPMessageDeleted,
 	.onChannelJoined = onYAMPChannelJoined,
 	.onChannelLeave = onYAMPChannelLeave,
 	.onDisconnected = onYAMPDisconnected,
 	.onProfileUpdated = onYAMPProfileUpdated,
+	.onMemberJoined = onYAMPMemberJoined,
+	.onMemberLeft = onYAMPMemberLeft,
 };
 
 void StartMainIMWindow(const YampLoginData* dat) {
@@ -1964,7 +1457,6 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	InitMsgMenus();
 	YampUser* heapusr = DupUserObject(dat->usr);
 
-	printf("%s\n", dat->usr->id);
 	strcpy(heapusr->id, dat->usr->id);
 	InsertUserObject(heapusr->id, heapusr);
 	char* displayName = dat->usr->displayname;
@@ -2002,7 +1494,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	GtkWidget* chatvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	suvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
 	gtk_widget_set_hexpand(suvbox, 0);
-	BuildUserProfile(dat->usr);
+	BuildUserProfile(suvbox, dat->usr);
 	gtk_widget_set_size_request(suvbox, 300, -1);
 	// su stands for space & user here, had no better term, the box is for both
 	// guild member listing and user profiles
@@ -2039,32 +1531,8 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_button_set_child(GTK_BUTTON(dmsbutton), dmsbtnimg);
 	g_signal_connect(dmsbutton, "clicked", G_CALLBACK(on_dms_btn_clicked),
 					 NULL);
-	GtkCssProvider* dmsprovider = gtk_css_provider_new();
-	gtk_css_provider_load_from_string(
-		dmsprovider, "button {"
-					 "	color: #f25858;"
-					 "  background: rgba(255,255,255,0.15);"
-					 "  border-radius: 16px;"
-					 "  padding: 0;"
-					 "  min-width: 48px;"
-					 "  min-height: 48px;"
-					 "  border: none;"
-					 "  transition: color 200ms ease, border-radius 200ms "
-					 "ease, background 200ms ease;"
-					 "}"
-					 "button:hover {"
-					 "	color: #404040;"
-					 "  background: #f25858;"
-					 "  border-radius: 12px;"
-					 "}"
-					 "button.active {"
-					 "	color: #404040;"
-					 "  background: #f25858;"
-					 "  border-radius: 12px;"
-					 "}");
-	gtk_style_context_add_provider(gtk_widget_get_style_context(dmsbutton),
-								   GTK_STYLE_PROVIDER(dmsprovider),
-								   GTK_STYLE_PROVIDER_PRIORITY_USER);
+
+	gtk_widget_add_css_class(dmsbutton, "space_button");
 
 	gtk_box_append(GTK_BOX(GuildVBOX), dmsbutton);
 
@@ -2081,9 +1549,9 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_widget_add_css_class(insertbtnimg, "active");
 	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 28);
 	gtk_button_set_child(GTK_BUTTON(insertbtn), insertbtnimg);
-	gtk_style_context_add_provider(gtk_widget_get_style_context(insertbtn),
-								   GTK_STYLE_PROVIDER(dmsprovider),
-								   GTK_STYLE_PROVIDER_PRIORITY_USER);
+
+	gtk_widget_add_css_class(insertbtn, "space_button");
+
 	gtk_box_append(GTK_BOX(GuildVBOX), insertbtn);
 
 	gtk_box_append(GTK_BOX(hbox), GuildVBOX);
@@ -2094,15 +1562,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 
 	ChannelSidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	gtk_widget_set_vexpand(ChannelSidebar, TRUE);
-	gtk_widget_set_size_request(ChannelSidebar, 180, -1);
-
-	GtkGesture* sidebarclick = gtk_gesture_click_new();
-	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(sidebarclick),
-								  GDK_BUTTON_SECONDARY);
-	g_signal_connect(sidebarclick, "pressed",
-					 G_CALLBACK(OnChannelSidebarRightClick), NULL);
-	gtk_widget_add_controller(ChannelSidebar,
-							  GTK_EVENT_CONTROLLER(sidebarclick));
+	gtk_widget_set_size_request(ChannelSidebar, 240, -1);
 
 	gtk_box_append(GTK_BOX(hbox), ChannelSidebar);
 	gtk_box_append(GTK_BOX(panelhbox), stackpane);
@@ -2110,7 +1570,6 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	chattitle = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 
 	topbar_group = gtk_size_group_new(GTK_SIZE_GROUP_VERTICAL);
-	chattitle = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 	gtk_widget_set_size_request(chattitle, -1, TOPBAR_HEIGHT);
 	gtk_widget_set_valign(chattitle, GTK_ALIGN_START);
 	gtk_size_group_add_widget(topbar_group, chattitle);
@@ -2128,8 +1587,6 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(chatscroll), chatarea);
 	gtk_box_append(GTK_BOX(chatvbox), chatscroll);
 	GtkWidget* inputhbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-	typingindicator = gtk_label_new(NULL);
-	gtk_widget_set_visible(typingindicator, 0);
 	typingindicator = gtk_label_new(NULL);
 	gtk_widget_set_visible(typingindicator, 0);
 	replyindicator = gtk_label_new(NULL);
@@ -2238,7 +1695,10 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	GtkGesture* click = gtk_gesture_click_new();
 	g_signal_connect(click, "pressed", G_CALLBACK(UserDetailsBoxOnClick), NULL);
 	gtk_widget_add_controller(UserDetailsBox, GTK_EVENT_CONTROLLER(click));
-	LoadSpaces(dat->spaces, dat->nspaces);
+	for (int i = 0; i < dat->nspaces; i++) {
+		InsertSpace(dat->spaces[i]);
+	}
+	// show notifications per every new friend request
 	for (int i = 0; i < dat->fqcount; i++) {
 		CreateFQNotification(dat->incfq[i]);
 	}

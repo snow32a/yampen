@@ -24,6 +24,7 @@ typedef int socket_fd;
 #endif
 
 // Attempt to sync these with the server time as much as you can!
+#define YAMP_UNCHANGED ((char*)-1)
 
 typedef struct{
 	char* status;
@@ -37,6 +38,7 @@ typedef struct {
 	char* username;
 	char* displayname;
 	char* description;
+	char* banner;
 	char* pfp;
 	YampStatus* status;
 } YampUser;
@@ -104,8 +106,9 @@ typedef struct {
 
 typedef void YAMPNewSpaceFn(YampSpace spaces);
 typedef void YAMPNewFriendFn(YampUser* friend);
-typedef void YAMPNewConversationFn(YampChannel* conversation);
-typedef void YAMPChannelsUpdatedFn(YampChannel** channels, int n, char* space);
+typedef void YAMPNewChannelFn(YampChannel* channel);
+typedef void YAMPChannelUpdatedFn(YampChannel* ch);
+typedef void YAMPChannelDeletedFn(char* id);
 
 typedef void YAMPDisconnectedFn(void);
 typedef void YAMPStatusUpdateFn(char* name, YampStatus* stat);
@@ -118,12 +121,15 @@ typedef void YAMPMessageDeletedFn(char* message_id);
 typedef void YAMPChannelJoinedFn(YampUser* user, char* channel_id);
 typedef void YAMPChannelLeaveFn(YampUser* user, char* channel_id);
 typedef void YAMPProfileUpdatedFn(YampUser* new_profile);
+typedef void YAMPMemberJoinedFn(YampUser* member, char* gc);
+typedef void YAMPMemberLeftFn(YampUser* member, char* gc);
 
 typedef struct YampEventListener{
     YAMPNewSpaceFn* onNewSpace;
     YAMPNewFriendFn* onNewFriend;
-    YAMPNewConversationFn* onNewConversation;
-    YAMPChannelsUpdatedFn* onChannelsUpdated;
+    YAMPNewChannelFn* onNewChannel;
+    YAMPChannelUpdatedFn* onChannelUpdated;
+    YAMPChannelDeletedFn* onChannelDeleted;
 
     YAMPDisconnectedFn* onDisconnected;
     YAMPStatusUpdateFn* onStatusUpdate;
@@ -136,6 +142,9 @@ typedef struct YampEventListener{
     YAMPChannelJoinedFn* onChannelJoined;
     YAMPChannelLeaveFn* onChannelLeave;
     YAMPProfileUpdatedFn* onProfileUpdated;
+
+    YAMPMemberJoinedFn* onMemberJoined;
+    YAMPMemberLeftFn* onMemberLeft;
 
 	struct YampEventListener* next;
 } YampEventListener;
@@ -166,7 +175,13 @@ int YAMPUpdateUserProfile(SSL* fd, YampUser* usr, void* callback);
 int YAMPListConversations(SSL* fd, void* callback);
 int YAMPStartDM(SSL* fd, char* targetusr, void* callback);
 int YAMPCreateGC(SSL* fd, char** init_members, int ninitmem, void* callback);
+int YAMPAddMemberToGC(SSL* fd, char* user_id, char* gc_id, void* callback);
 char* MakeDMChannel(const char* a, const char* b);
+int YAMPLeaveGC(SSL* fd, char* gc_id, void* callback);
+int YAMPGCKick(SSL* fd, char* user_id, char* gc_id, void* callback);
+int YAMPGCTransferOwnership(SSL* fd, char* user_id, char* gc_id, void* callback);
+int YAMPGCEdit(SSL* fd, char* gc_id, char* name, char* icon, void* callback,
+			   void* userdata);
 
 // messages
 int YAMPSendMessage(SSL* fd, char* where, YampMessage* msg, int nonce,
@@ -183,6 +198,7 @@ int YAMPInsertSpace(SSL* fd, char* name, char* display_name, int type,
 int YAMPListSpaceChannels(SSL* fd, char* space, void* callback);
 int YAMPCreateChannel(SSL* fd, char* space, char* name, int pos, int type,
 					  char* parent, void* callback);
+int YAMPDeleteChannel(SSL* fd, char* channel, void* callback);
 int YAMPJoinChannel(SSL* fd, char* channel, void* callback);
 int YAMPLeaveChannel(SSL* fd, char* channel, void* callback);
 int YAMPJoinSpace(SSL* fd, char* code, void* callback);
@@ -196,7 +212,9 @@ int YAMPUploadFile(SSL* fd, char* MIME, unsigned char* file, int len,
 
 // message object helpers
 YampMessage* DupMessageObject(YampMessage* msg);
+YampMessage** DupMessageArray(YampMessage** msg, int n);
 void FreeMessageObject(YampMessage* msg);
+void FreeMessageArray(YampMessage** msg, int n);
 
 // attachment object helpers
 YampAttachment* DupAttachmentObject(YampAttachment* attachment);
@@ -212,7 +230,9 @@ YampSpace DupSpaceObject(const YampSpace* s);
 
 // channel object helpers
 YampChannel* DupChannelObject(const YampChannel* s);
+YampChannel** DupChannelArray(YampChannel** arr, int narr);
 void FreeChannelObject(YampChannel* ch);
+void FreeChannelArray(YampChannel** ch, int n);
 
 // status object helpers
 void FreeStatusObject(YampStatus* stat);
@@ -224,3 +244,5 @@ void YAMP_Init(); // SOLELY required due to curl
 char* ProcessAttachmentURL(char* input);
 
 int YAMPCreateSpaceInvite(SSL* fd, char* space, int uses, void* callback, void* userdata);
+
+int YAMPGetMaxGCMembers();

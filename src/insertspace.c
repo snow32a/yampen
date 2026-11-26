@@ -2,7 +2,7 @@
 #include "glibconfig.h"
 #include "globals.h"
 #include "gtk/gtkshortcut.h"
-#include "protocol/yamp.h"
+#include <yamp.h>
 typedef struct {
 	GtkWidget* stack;
 	GtkWidget* datapage;
@@ -278,7 +278,7 @@ void cb_insert_space(GtkButton* btn, gpointer dat) {
 	GtkWidget* privatespace = gtk_list_box_row_new();
 	gtk_widget_set_size_request(privatespace, -1, 80);
 	gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(privatespace),
-							   gtk_label_new("› Private/Friend Space"));
+							   gtk_label_new("› Private Space"));
 
 	GtkWidget* communityspace = gtk_list_box_row_new();
 	gtk_widget_set_size_request(communityspace, -1, 80);

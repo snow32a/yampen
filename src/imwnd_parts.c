@@ -1,0 +1,24 @@
+#include <gtk/gtk.h>
+GtkWidget* main_window;
+GtkWidget* ChannelSidebar;
+GtkWidget* dmsbutton;
+GtkWidget* GuildVBOX;
+GtkWidget* GuildList;
+GtkWidget* SelfPfp;
+GtkWidget* SelfPfpFrame;
+GtkWidget* chatscroll;
+GtkWidget* chatarea;
+GtkWidget* DisplayNameLabel;
+GtkWidget* UsernameLabel;
+GtkWidget* selectedspacebtn;
+GtkWidget* stackpane;
+GtkWidget* notifoverlay;
+GtkWidget* dmlist;
+GtkWidget* ListVBOX;
+GtkWidget* ListTitle;
+GtkWidget* suvbox;
+GtkWidget* chattitle;
+GtkWidget* typingindicator;
+GtkWidget* replyindicator;
+GtkWidget* AttachementsBox;
+GtkWidget* memberlist = NULL;

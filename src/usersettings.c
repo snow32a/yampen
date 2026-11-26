@@ -1,6 +1,6 @@
 #include <gtk/gtk.h>
 #include "globals.h"
-#include "protocol/yamp.h"
+#include <yamp.h>
 #include "gtk/gtkshortcut.h"
 #include "chatwnd.h"
 #include "imwnd.h"

@@ -1,6 +1,6 @@
 [
   {
-    "file": "assets.c",
+    "file": "src/avatar.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -31,15 +31,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "assets.c"
+      "src/avatar.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "chatinput.c",
+    "file": "src/chatinput.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -70,15 +72,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "chatinput.c"
+      "src/chatinput.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "chatwnd.c",
+    "file": "src/chatwnd.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -109,15 +113,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "chatwnd.c"
+      "src/chatwnd.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "emojipopover.c",
+    "file": "src/emojipopover.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -148,15 +154,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "emojipopover.c"
+      "src/emojipopover.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "gcmemselect.c",
+    "file": "src/gcmemselect.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -187,15 +195,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "gcmemselect.c"
+      "src/gcmemselect.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "hashtables.c",
+    "file": "src/gcsettings.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -226,15 +236,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "hashtables.c"
+      "src/gcsettings.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "imwnd.c",
+    "file": "src/hashtables.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -265,15 +277,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "imwnd.c"
+      "src/hashtables.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "insertspace.c",
+    "file": "src/imwnd.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -304,15 +318,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "insertspace.c"
+      "src/imwnd.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "login.c",
+    "file": "src/insertspace.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -343,15 +359,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "login.c"
+      "src/insertspace.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "main.c",
+    "file": "src/invitedialog.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -382,15 +400,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "main.c"
+      "src/invitedialog.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "message.c",
+    "file": "src/login.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -421,15 +441,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "message.c"
+      "src/login.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "monocypher.c",
+    "file": "src/main.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -460,15 +482,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "monocypher.c"
+      "src/main.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "notification.c",
+    "file": "src/memberslist.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -499,15 +523,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "notification.c"
+      "src/memberslist.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "settings.c",
+    "file": "src/message.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -538,15 +564,17 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "settings.c"
+      "src/message.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
   },
   {
-    "file": "usersettings.c",
+    "file": "src/notification.c",
     "arguments": [
       "/usr/bin/gcc",
       "-I/usr/include/libsecret-1",
@@ -577,9 +605,134 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
-      "usersettings.c"
+      "src/notification.c"
+    ],
+    "directory": "/home/winsped/Projects/yampen",
+    "output": "build/yampen"
+  },
+  {
+    "file": "src/settings.c",
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I/usr/include/libsecret-1",
+      "-I/usr/include/gio-unix-2.0",
+      "-I/usr/include/tss2",
+      "-I/usr/include/gtk-4.0",
+      "-I/usr/include/graphene-1.0",
+      "-I/usr/lib/graphene-1.0/include",
+      "-I/usr/include/librsvg-2.0",
+      "-I/usr/include/gdk-pixbuf-2.0",
+      "-I/usr/include/glycin-2",
+      "-I/usr/include/cairo",
+      "-I/usr/include/libxml2",
+      "-I/usr/include/pango-1.0",
+      "-I/usr/include/libmount",
+      "-I/usr/include/blkid",
+      "-I/usr/include/fribidi",
+      "-I/usr/include/pixman-1",
+      "-I/usr/include/harfbuzz",
+      "-I/usr/include/freetype2",
+      "-I/usr/include/libpng16",
+      "-I/usr/include/glib-2.0",
+      "-I/usr/lib/glib-2.0/include",
+      "-I/usr/include/sysprof-6",
+      "-I/usr/include/cjson",
+      "-DHAVE_LIBSECRET",
+      "-fsanitize=address",
+      "-Wall",
+      "-g",
+      "-O0",
+      "-Iprotocol",
+      "-Iinclude",
+      "-o",
+      "build/yampen",
+      "src/settings.c"
+    ],
+    "directory": "/home/winsped/Projects/yampen",
+    "output": "build/yampen"
+  },
+  {
+    "file": "src/spacesettings.c",
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I/usr/include/libsecret-1",
+      "-I/usr/include/gio-unix-2.0",
+      "-I/usr/include/tss2",
+      "-I/usr/include/gtk-4.0",
+      "-I/usr/include/graphene-1.0",
+      "-I/usr/lib/graphene-1.0/include",
+      "-I/usr/include/librsvg-2.0",
+      "-I/usr/include/gdk-pixbuf-2.0",
+      "-I/usr/include/glycin-2",
+      "-I/usr/include/cairo",
+      "-I/usr/include/libxml2",
+      "-I/usr/include/pango-1.0",
+      "-I/usr/include/libmount",
+      "-I/usr/include/blkid",
+      "-I/usr/include/fribidi",
+      "-I/usr/include/pixman-1",
+      "-I/usr/include/harfbuzz",
+      "-I/usr/include/freetype2",
+      "-I/usr/include/libpng16",
+      "-I/usr/include/glib-2.0",
+      "-I/usr/lib/glib-2.0/include",
+      "-I/usr/include/sysprof-6",
+      "-I/usr/include/cjson",
+      "-DHAVE_LIBSECRET",
+      "-fsanitize=address",
+      "-Wall",
+      "-g",
+      "-O0",
+      "-Iprotocol",
+      "-Iinclude",
+      "-o",
+      "build/yampen",
+      "src/spacesettings.c"
+    ],
+    "directory": "/home/winsped/Projects/yampen",
+    "output": "build/yampen"
+  },
+  {
+    "file": "src/usersettings.c",
+    "arguments": [
+      "/usr/bin/gcc",
+      "-I/usr/include/libsecret-1",
+      "-I/usr/include/gio-unix-2.0",
+      "-I/usr/include/tss2",
+      "-I/usr/include/gtk-4.0",
+      "-I/usr/include/graphene-1.0",
+      "-I/usr/lib/graphene-1.0/include",
+      "-I/usr/include/librsvg-2.0",
+      "-I/usr/include/gdk-pixbuf-2.0",
+      "-I/usr/include/glycin-2",
+      "-I/usr/include/cairo",
+      "-I/usr/include/libxml2",
+      "-I/usr/include/pango-1.0",
+      "-I/usr/include/libmount",
+      "-I/usr/include/blkid",
+      "-I/usr/include/fribidi",
+      "-I/usr/include/pixman-1",
+      "-I/usr/include/harfbuzz",
+      "-I/usr/include/freetype2",
+      "-I/usr/include/libpng16",
+      "-I/usr/include/glib-2.0",
+      "-I/usr/lib/glib-2.0/include",
+      "-I/usr/include/sysprof-6",
+      "-I/usr/include/cjson",
+      "-DHAVE_LIBSECRET",
+      "-fsanitize=address",
+      "-Wall",
+      "-g",
+      "-O0",
+      "-Iprotocol",
+      "-Iinclude",
+      "-o",
+      "build/yampen",
+      "src/usersettings.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"
@@ -616,48 +769,11 @@
       "-Wall",
       "-g",
       "-O0",
+      "-Iprotocol",
+      "-Iinclude",
       "-o",
       "build/yampen",
       "protocol/yamp.c"
-    ],
-    "directory": "/home/winsped/Projects/yampen",
-    "output": "build/yampen"
-  },
-  {
-    "file": "hmap/hashmap.c",
-    "arguments": [
-      "/usr/bin/gcc",
-      "-I/usr/include/libsecret-1",
-      "-I/usr/include/gio-unix-2.0",
-      "-I/usr/include/tss2",
-      "-I/usr/include/gtk-4.0",
-      "-I/usr/include/graphene-1.0",
-      "-I/usr/lib/graphene-1.0/include",
-      "-I/usr/include/librsvg-2.0",
-      "-I/usr/include/gdk-pixbuf-2.0",
-      "-I/usr/include/glycin-2",
-      "-I/usr/include/cairo",
-      "-I/usr/include/libxml2",
-      "-I/usr/include/pango-1.0",
-      "-I/usr/include/libmount",
-      "-I/usr/include/blkid",
-      "-I/usr/include/fribidi",
-      "-I/usr/include/pixman-1",
-      "-I/usr/include/harfbuzz",
-      "-I/usr/include/freetype2",
-      "-I/usr/include/libpng16",
-      "-I/usr/include/glib-2.0",
-      "-I/usr/lib/glib-2.0/include",
-      "-I/usr/include/sysprof-6",
-      "-I/usr/include/cjson",
-      "-DHAVE_LIBSECRET",
-      "-fsanitize=address",
-      "-Wall",
-      "-g",
-      "-O0",
-      "-o",
-      "build/yampen",
-      "hmap/hashmap.c"
     ],
     "directory": "/home/winsped/Projects/yampen",
     "output": "build/yampen"

@@ -1,0 +1,24 @@
+#include <gtk/gtk.h>
+extern GtkWidget* main_window;
+extern GtkWidget* ChannelSidebar;
+extern GtkWidget* dmsbutton;
+extern GtkWidget* GuildVBOX;
+extern GtkWidget* GuildList;
+extern GtkWidget* SelfPfp;
+extern GtkWidget* SelfPfpFrame;
+extern GtkWidget* chatscroll;
+extern GtkWidget* chatarea;
+extern GtkWidget* DisplayNameLabel;
+extern GtkWidget* UsernameLabel;
+extern GtkWidget* selectedspacebtn;
+extern GtkWidget* stackpane;
+extern GtkWidget* notifoverlay;
+extern GtkWidget* dmlist;
+extern GtkWidget* ListVBOX;
+extern GtkWidget* ListTitle;
+extern GtkWidget* suvbox;
+extern GtkWidget* chattitle;
+extern GtkWidget* typingindicator;
+extern GtkWidget* replyindicator;
+extern GtkWidget* AttachementsBox;
+extern GtkWidget* memberlist;
