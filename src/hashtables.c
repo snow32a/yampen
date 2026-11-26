@@ -2,7 +2,7 @@
 #include "hashtables.h"
 #include <gtk/gtk.h>
 #include <yamp.h>
-#include "types.h"
+#include <types.h>
 GHashTable* dtt;
 GHashTable* ctt;
 GHashTable* stt;

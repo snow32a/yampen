@@ -7,7 +7,7 @@ RES_DEPS := assets.gresource.xml $(shell glib-compile-resources \
 
 CC = gcc
 
-CFLAGS += -Wall -g -O0 -Iprotocol -Iinclude
+CFLAGS := -Wall -g -O0 -Iprotocol -Iinclude $(CFLAGS)
 
 BUILD_DIR := build
 ifeq ($(PLATFORM),win32)
