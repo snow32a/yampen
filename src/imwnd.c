@@ -1527,7 +1527,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 
 	GtkWidget* dmsbtnimg = gtk_image_new_from_icon_name("dms-symbolic");
 	gtk_widget_add_css_class(dmsbutton, "active");
-	gtk_image_set_pixel_size(GTK_IMAGE(dmsbtnimg), 24);
+	gtk_image_set_pixel_size(GTK_IMAGE(dmsbtnimg), 26);
 	gtk_button_set_child(GTK_BUTTON(dmsbutton), dmsbtnimg);
 	g_signal_connect(dmsbutton, "clicked", G_CALLBACK(on_dms_btn_clicked),
 					 NULL);
@@ -1552,7 +1552,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 
 	GtkWidget* insertbtnimg = gtk_image_new_from_icon_name("insert-symbolic");
 	gtk_widget_add_css_class(insertbtnimg, "active");
-	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 24);
+	gtk_image_set_pixel_size(GTK_IMAGE(insertbtnimg), 26);
 	gtk_button_set_child(GTK_BUTTON(insertbtn), insertbtnimg);
 
 	gtk_widget_add_css_class(insertbtn, "space_button");
