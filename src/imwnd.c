@@ -290,7 +290,7 @@ int InsertSpace(YampSpace space) {
 	strcpy(heapspace->id, space.id);
 	g_signal_connect(spacebtn, "clicked", G_CALLBACK(SpaceRowCB), heapspace);
 	InsertSpaceObject(strdup(space.id), heapspace);
-	gtk_widget_set_size_request(spacebtn, 52, 52);
+	gtk_widget_set_size_request(spacebtn, 4, 48);
 	gtk_widget_set_hexpand(spacebtn, FALSE);
 	gtk_widget_set_vexpand(spacebtn, FALSE);
 	gtk_widget_set_halign(spacebtn, GTK_ALIGN_CENTER);
@@ -314,7 +314,7 @@ int InsertSpace(YampSpace space) {
 	gtk_widget_set_halign(lbl, GTK_ALIGN_CENTER);
 	gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_NONE);
 
-	int avail = 52 - 10;
+	int avail = 48 - 10;
 	PangoLayout* layout = gtk_widget_create_pango_layout(lbl, initials);
 	int textw, texth;
 	pango_layout_get_pixel_size(layout, &textw, &texth);
@@ -1513,7 +1513,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	gtk_list_box_set_selection_mode(GTK_LIST_BOX(GuildList),
 									GTK_SELECTION_NONE);
 	dmsbutton = gtk_button_new();
-	gtk_widget_set_size_request(dmsbutton, 52, 52);
+	gtk_widget_set_size_request(dmsbutton, 48, 48);
 	gtk_widget_set_hexpand(dmsbutton, FALSE);
 	gtk_widget_set_vexpand(dmsbutton, FALSE);
 	gtk_widget_set_halign(dmsbutton, GTK_ALIGN_CENTER);
@@ -1534,7 +1534,12 @@ void StartMainIMWindow(const YampLoginData* dat) {
 
 	gtk_widget_add_css_class(dmsbutton, "space_button");
 
+	GtkWidget *dms_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+	gtk_widget_set_halign(dms_sep, GTK_ALIGN_CENTER);
+	gtk_widget_set_size_request(dms_sep, 40, -1);
+
 	gtk_box_append(GTK_BOX(GuildVBOX), dmsbutton);
+	gtk_box_append(GTK_BOX(GuildVBOX), dms_sep);
 
 	gtk_box_append(GTK_BOX(GuildVBOX), GuildList);
 	gtk_widget_set_vexpand(GuildList, 1);
@@ -1543,7 +1548,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 	g_signal_connect(insertbtn, "clicked", G_CALLBACK(cb_insert_space), NULL);
 	gtk_widget_set_halign(insertbtn, GTK_ALIGN_CENTER);
 	gtk_widget_set_valign(insertbtn, GTK_ALIGN_END);
-	gtk_widget_set_size_request(insertbtn, 52, 52);
+	gtk_widget_set_size_request(insertbtn, 48, 48);
 
 	GtkWidget* insertbtnimg = gtk_image_new_from_icon_name("insert-symbolic");
 	gtk_widget_add_css_class(insertbtnimg, "active");

@@ -50,7 +50,10 @@
     background: #f25858;
     border-radius: 12px;
 }
-
+separator {
+    background-color:#606060;
+    margin:4px;
+}
 .channel-category {
     padding-top: 5px;
 }
