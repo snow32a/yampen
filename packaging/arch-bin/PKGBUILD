@@ -12,5 +12,5 @@ sha256sums=('SKIP')
 
 package() {
   install -Dm755 usr/bin/yampen "$pkgdir/usr/bin/yampen"
-  install -Dm644 yampen.desktop "$pkgdir/usr/share/applications/yampen.desktop"
+  install -Dm644 usr/share/applications/yampen.desktop "$pkgdir/usr/share/applications/yampen.desktop"
 }
