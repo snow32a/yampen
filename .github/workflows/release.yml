@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libsecret-1-dev \
+            libgtk-4-dev librsvg2-dev libcurl4-openssl-dev libssl-dev libcjson-dev
+      - name: Build
+        run: |
+          ./configure linux
+          make
+          mv build/yampen build/yampen-linux-bin
+          cd build
+          sha256sum yampen-linux-bin > yampen-linux-bin.sha256
+          echo "${GITHUB_REF_NAME}" > version.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/yampen-linux-bin
+            build/yampen-linux-bin.sha256
+            build/version.txt
