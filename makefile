@@ -50,11 +50,12 @@ build/yampen.exe: $(SRC)
 		done; \
 	done
 	makensis setup.nsi
-else # unix style prob
+else # UNIX systems
 build/usr/bin/yampen: $(SRC)
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(BUILD_DIR)/usr/bin
 	@mkdir -p $(BUILD_DIR)/usr/share/applications
+	cp packaging/yampen.desktop $(BUILD_DIR)/usr/share/applications/yampen.desktop
 	$(CC) $(CPPFLAGS) -fsanitize=address $(CFLAGS) \
 		-o $(BUILD_DIR)/usr/bin/yampen \
 		$(SRC) $(LDFLAGS) $(LIBS)
