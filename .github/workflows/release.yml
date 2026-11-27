@@ -20,13 +20,14 @@ jobs:
         run: |
           ./configure linux
           make
-          mv build/yampen build/yampen-linux-bin
+          tar -czf yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz -C build .
+          mv yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz build/
           cd build
-          sha256sum yampen-linux-bin > yampen-linux-bin.sha256
-          echo "${GITHUB_REF_NAME}" > version.txt
+          sha256sum yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz > yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz.sha256
+          echo "$GITHUB_REF_NAME" > version.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/yampen-linux-bin
-            build/yampen-linux-bin.sha256
+            build/yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz
+            build/yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz.sha256
             build/version.txt

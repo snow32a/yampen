@@ -1,5 +1,5 @@
 pkgname=yampen-bin
-pkgver=0.1.0
+pkgver=0.14.1
 pkgrel=1
 arch=('x86_64')
 url="https://github.com/snow32a/yampen"
@@ -7,11 +7,11 @@ license=('MIT')
 depends=('gtk3')
 provides=('yampen')
 conflicts=('yampen')
-source=("$url/releases/download/v$pkgver/yampen-$pkgver-linux-x86_64.tar.gz")
+source=("$url/releases/download/v$pkgver/yampen-v$pkgver-linux-x86_64.tar.gz")
 sha256sums=('SKIP')
 
 package() {
-  install -Dm755 yampen "$pkgdir/usr/bin/yampen"
+  install -Dm755 usr/bin/yampen "$pkgdir/usr/bin/yampen"
   # install -Dm644 yampen.desktop "$pkgdir/usr/share/applications/yampen.desktop"
   # install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
