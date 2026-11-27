@@ -28,6 +28,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz
-            build/yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz.sha256
+            build/yampen-${{ github.ref_name }}-linux-x86_64.tar.gz
+            build/yampen-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
             build/version.txt
