@@ -25,9 +25,12 @@ jobs:
           cd build
           sha256sum yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz > yampen-$GITHUB_REF_NAME-linux-x86_64.tar.gz.sha256
           echo "$GITHUB_REF_NAME" > version.txt
+          cp ../packaging/arch-bin/PKGBUILD ./
+          sed -i "s/^pkgver=.*/pkgver=${GITHUB_REF_NAME#v}/" PKGBUILD
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             build/yampen-${{ github.ref_name }}-linux-x86_64.tar.gz
             build/yampen-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
+            build/PKGBUILD
             build/version.txt
