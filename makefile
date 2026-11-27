@@ -12,7 +12,7 @@ CFLAGS := -Wall -g -O0 -Iprotocol -Iinclude $(CFLAGS)
 BUILD_DIR := build
 ifeq ($(PLATFORM),win32)
 
-build/yampen.exe: $(SRC)
+build/yampen.exe: $(SRC) src/assets.c
 	@mkdir -p $(BUILD_DIR)
 	$(CROSS_COMPILE)$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-o $(BUILD_DIR)/yampen.exe \
@@ -51,7 +51,7 @@ build/yampen.exe: $(SRC)
 	done
 	makensis setup.nsi
 else # UNIX systems
-build/usr/bin/yampen: $(SRC)
+build/usr/bin/yampen: $(SRC) src/assets.c
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(BUILD_DIR)/usr/bin
 	@mkdir -p $(BUILD_DIR)/usr/share/applications
