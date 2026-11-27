@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Yampen
+Icon=yampen
+GenericName=Chat Application
+Categories=InstantMessaging;Chat;Network;
+Exec=yampen %U
