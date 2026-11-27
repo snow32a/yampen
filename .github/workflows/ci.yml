@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +19,12 @@ jobs:
         run: |
           ./configure linux
           make
+          sha256sum build/yampen > build/yampen-linux-bin.sha256
+          mv build/yampen build/yampen-linux-bin
+          echo "${GITHUB_REF_NAME}" > build/version.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/yampen-linux-bin
+            build/yampen-linux-bin.sha256
+            build/version.txt
