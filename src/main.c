@@ -21,7 +21,6 @@ static void activate(GtkApplication* app, gpointer user_data) {
 		GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 	g_object_unref(provider);
-
 #ifdef FORCE_ADWAITA_DARK
 	g_object_set(gtk_settings_get_default(), "gtk-theme-name", "Adwaita",
 				 "gtk-application-prefer-dark-theme", TRUE, NULL);
