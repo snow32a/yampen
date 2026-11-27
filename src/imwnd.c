@@ -615,24 +615,26 @@ void SetupFriendsPane(GtkWidget* friendspane) {
 }
 typedef struct {
 	char* username;
+	char* id;
 	GtkWidget* notif;
 } fqnotifpayload;
 
 static void FQPayloadFree(fqnotifpayload* p) {
+	free(p->id);
 	free(p->username);
 	free(p);
 }
 
 void AcceptFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
-	YAMPAcceptFriendReq(mainsock, payload->username, NULL);
-	YAMPStartDM(mainsock, payload->username, NULL);
+	YAMPAcceptFriendReq(mainsock, payload->id, NULL);
+	YAMPStartDM(mainsock, payload->id, NULL);
 	gtk_widget_unparent(payload->notif);
 	FQPayloadFree(payload);
 }
 void DenyFQBtnCB(GtkButton* btn, void* data) {
 	fqnotifpayload* payload = data;
-	YAMPDenyFriendReq(mainsock, payload->username, NULL);
+	YAMPDenyFriendReq(mainsock, payload->id, NULL);
 	gtk_widget_unparent(payload->notif);
 	FQPayloadFree(payload);
 }
@@ -641,6 +643,7 @@ int CreateFQNotification(YampUser* usr) {
 	char* txt = malloc(25 + strlen(usr->displayname));
 	fqnotifpayload* payload = malloc(sizeof(fqnotifpayload));
 	payload->username = strdup(usr->username);
+	payload->id = strdup(usr->id);
 	sprintf(txt, "New friend request from %s", usr->displayname);
 	GtkWidget* btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
 	GtkWidget* acceptbtn = gtk_button_new_with_label("Accept");
