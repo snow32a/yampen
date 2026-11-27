@@ -26,7 +26,6 @@ static void activate(GtkApplication* app, gpointer user_data) {
 	g_object_set(gtk_settings_get_default(), "gtk-theme-name", "Adwaita",
 				 "gtk-application-prefer-dark-theme", TRUE, NULL);
 #endif
-
 	DisplayLoginDialog(app);
 	/*
 	GtkWidget *window;
