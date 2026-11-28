@@ -61,6 +61,7 @@ void YAMPUploadAttachmentCB(char* url, int success, void* ud) {
 int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 					guint keycode, GdkModifierType state, gpointer user_data) {
 	if (time(NULL) - LastTypedAt > 5 && currentChannel) {
+		LastTypedAt = time(NULL);
 		YAMPTyping(mainsock, currentChannel->id, NULL);
 	}
 	EKeyPayload* dat = user_data;
