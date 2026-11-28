@@ -58,9 +58,12 @@ void YAMPUploadAttachmentCB(char* url, int success, void* ud) {
 	d->url = (success && url) ? strdup(url) : NULL;
 	g_idle_add(UploadDoneIdle, d);
 }
+int TypingStopped = 1; // Immediately send the event no matter what
+// For the first stroke of the next msg
 int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 					guint keycode, GdkModifierType state, gpointer user_data) {
-	if (time(NULL) - LastTypedAt > 5 && currentChannel) {
+	if (((time(NULL) - LastTypedAt > 5) || TypingStopped) && currentChannel) {
+		TypingStopped = 0;
 		LastTypedAt = time(NULL);
 		YAMPTyping(mainsock, currentChannel->id, NULL);
 	}
@@ -110,6 +113,7 @@ int EntryKeyHandler(GtkEventControllerKey* controller, guint keyval,
 		ps->msg->timestamp = time(NULL);
 		strncpy(ps->channel, currentChannel->id, sizeof(ps->channel) - 1);
 
+		TypingStopped=1;
 		GtkWidget* msgrow = PushUIMessage(chatscroll, chatarea, ps->msg, 1);
 		ScrollChatToBottom();
 		ps->nonce = RegisterMessageSilhouette(msgrow);

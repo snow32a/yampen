@@ -22,3 +22,6 @@ GtkWidget* typingindicator;
 GtkWidget* replyindicator;
 GtkWidget* AttachementsBox;
 GtkWidget* memberlist = NULL;
+
+GtkWidget* friendslist;
+GtkWidget* toptabs;

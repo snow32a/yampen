@@ -131,6 +131,7 @@ void OnUITransferGCOwnership(YampUser* usr, void* dat) {
 	YAMPGCTransferOwnership(mainsock, usr->id, dat, NULL);
 }
 void OnDMRowSelected(GtkListBox* box, GtkListBoxRow* row, gpointer user_data) {
+	gtk_list_box_unselect_all(GTK_LIST_BOX(toptabs));
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "chat");
 	if (!row) {
 		return;
@@ -275,9 +276,9 @@ void SpaceRowCB(GtkButton* btn, gpointer user_data) {
 	YampSpace* space = user_data;
 	curSpace = space->id;
 	YampChannel** cached_channels;
-	int ncached_channels = GetSpaceChannelCache(space->id,&cached_channels);
-	if(cached_channels){
-		LoadSpaceChannels(cached_channels,ncached_channels);
+	int ncached_channels = GetSpaceChannelCache(space->id, &cached_channels);
+	if (cached_channels) {
+		LoadSpaceChannels(cached_channels, ncached_channels);
 	} else {
 		YAMPListSpaceChannels(mainsock, curSpace, onYAMPChannelsFetched);
 	}
@@ -411,7 +412,7 @@ int LoadSpaceChannels(YampChannel** channels, int nchannels) {
 	gtk_box_append(GTK_BOX(ChannelSidebar), channellist_scr);
 	return G_SOURCE_REMOVE;
 }
-int MainThreadChannelCB(ChannelFetchPayload* dat){
+int MainThreadChannelCB(ChannelFetchPayload* dat) {
 	LoadSpaceChannels(dat->channels, dat->nchannels);
 	UpdateSpaceChannelCache(dat->channels, dat->nchannels, curSpace);
 	free(dat);
@@ -419,9 +420,9 @@ int MainThreadChannelCB(ChannelFetchPayload* dat){
 }
 void onYAMPChannelsFetched(YampChannel** channels, int nchannels) {
 	ChannelFetchPayload* cfp = malloc(sizeof(ChannelFetchPayload));
-	
+
 	cfp->nchannels = nchannels;
-	cfp->channels = DupChannelArray(channels,nchannels);
+	cfp->channels = DupChannelArray(channels, nchannels);
 	g_idle_add(G_SOURCE_FUNC(MainThreadChannelCB), cfp);
 }
 typedef struct {
@@ -494,6 +495,7 @@ void onYAMPStatusUpdate(char* id, YampStatus* stat) {
 void UserDetailsBoxOnClick(gpointer none) { SpawnSettings(); }
 
 void DMsListTopPagesCB(GtkListBox* lb, GtkListBoxRow* lbr, void* data) {
+	gtk_list_box_unselect_all(GTK_LIST_BOX(dmlist));
 	gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "friends");
 }
 
@@ -534,7 +536,7 @@ void on_dms_btn_clicked(GtkButton* btn, gpointer user_data) {
 		gtk_widget_set_vexpand(scrolledwnd, TRUE);
 		dmlist = gtk_list_box_new();
 		gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolledwnd), dmlist);
-		GtkWidget* toptabs = gtk_list_box_new();
+		toptabs = gtk_list_box_new();
 		GtkWidget* friendscontent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
 		gtk_box_append(GTK_BOX(friendscontent),
 					   gtk_image_new_from_icon_name("dms"));
@@ -582,6 +584,29 @@ void SendFQBtnCB(GtkButton* btn, void* data) {
 		gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(data))), NULL);
 	gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(data)), "", 0);
 }
+static char* pending_dm_user = NULL;
+void OnFriendDMButtonClicked(GtkButton* btn, YampUser* user) {
+	if (!user || !dmlist)
+		return;
+
+	GtkWidget* row = FindConvRow(user->id, YAMP_DM);
+	if (row) {
+		if (gtk_list_box_get_selected_row(GTK_LIST_BOX(dmlist)) ==
+			GTK_LIST_BOX_ROW(row)) {
+			gtk_list_box_unselect_all(GTK_LIST_BOX(toptabs));
+			gtk_stack_set_visible_child_name(GTK_STACK(stackpane), "chat");
+		} else {
+			gtk_list_box_select_row(GTK_LIST_BOX(dmlist),
+									GTK_LIST_BOX_ROW(row));
+		}
+		return;
+	}
+
+	// no DM exists yet, so create one and open it when the channel arrives
+	free(pending_dm_user);
+	pending_dm_user = strdup(user->id);
+	YAMPStartDM(mainsock, user->id, NULL);
+}
 void SetupFriendsPane(GtkWidget* friendspane) {
 	GtkWidget* mainvbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
 	GtkWidget* fqsendarea = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
@@ -606,8 +631,24 @@ void SetupFriendsPane(GtkWidget* friendspane) {
 	gtk_box_append(GTK_BOX(mainvbox), fqsendarea);
 
 	GtkWidget* list_scr = gtk_scrolled_window_new();
-	GtkWidget* friendslist = gtk_list_box_new();
+	friendslist = gtk_list_box_new();
+	for (int i = 0; i < ncached_friends; i++) {
+		GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+		GtkWidget* name_lbl = gtk_label_new(cached_friends[i]->displayname
+												? cached_friends[i]->displayname
+												: cached_friends[i]->username);
+		gtk_widget_set_hexpand(name_lbl, 1);
+		GtkWidget* dm_btn = gtk_button_new_from_icon_name("mail-message-new");
+		g_signal_connect(dm_btn, "clicked", G_CALLBACK(OnFriendDMButtonClicked),
+						 cached_friends[i]);
+		gtk_box_append(GTK_BOX(box), name_lbl);
+		gtk_box_append(GTK_BOX(box), dm_btn);
+		gtk_list_box_append(GTK_LIST_BOX(friendslist),
+							box); // automatically wraps it as a row
+	}
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scr), friendslist);
+	gtk_box_append(GTK_BOX(mainvbox), list_scr);
+	gtk_widget_set_vexpand(list_scr, 1);
 
 	gtk_box_append(GTK_BOX(friendspane), mainvbox);
 	gtk_widget_set_hexpand(mainvbox, 1);
@@ -953,6 +994,19 @@ static void InsertSpaceChannel(YampChannel* ch) {
 gboolean MainThreadNewChannel(YampChannel* heapconv) {
 	if (heapconv->type == YAMP_DM || heapconv->type == YAMP_GC) {
 		InsertConvIntoList(heapconv);
+		if (heapconv->type == YAMP_DM && pending_dm_user) {
+			for (int i = 0; i < heapconv->npeople; i++) {
+				if (strcmp(heapconv->people[i]->id, pending_dm_user) == 0) {
+					GtkWidget* row = FindConvRow(pending_dm_user, YAMP_DM);
+					if (row)
+						gtk_list_box_select_row(GTK_LIST_BOX(dmlist),
+												GTK_LIST_BOX_ROW(row));
+					free(pending_dm_user);
+					pending_dm_user = NULL;
+					break;
+				}
+			}
+		}
 		cached_convs =
 			realloc(cached_convs, sizeof(YampChannel*) * (ncached_convs + 1));
 		cached_convs[ncached_convs] = DupChannelObject(heapconv);
@@ -960,6 +1014,7 @@ gboolean MainThreadNewChannel(YampChannel* heapconv) {
 	} else if (YAMP_IS_SPACE_TYPE(heapconv->type)) {
 		InsertSpaceChannel(heapconv);
 	}
+
 	FreeChannelObject(heapconv);
 	return G_SOURCE_REMOVE;
 }
@@ -1227,29 +1282,6 @@ void onYAMPChannelLeave(YampUser* user, char* channel_id) {
 	payload->channel_id = strdup(channel_id);
 	payload->user = DupUserObject(user);
 	g_idle_add((GSourceFunc)ChannelLeft_MainThread, payload);
-}
-GtkWidget* FindConvRow(char* id, int type) {
-	GtkWidget* row = gtk_widget_get_first_child(dmlist);
-
-	while (row) {
-		GtkWidget* box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
-		GtkWidget* label =
-			gtk_widget_get_next_sibling(gtk_widget_get_first_child(box));
-
-		int rowtype =
-			GPOINTER_TO_INT(g_object_get_data(G_OBJECT(label), "type"));
-
-		if (rowtype == type) {
-			char* rowid = g_object_get_data(G_OBJECT(label), "id");
-
-			if (rowid && strcmp(rowid, id) == 0)
-				return row;
-		}
-
-		row = gtk_widget_get_next_sibling(row);
-	}
-
-	return NULL;
 }
 GtkWidget* FindMembersRow(char* id) {
 	GtkWidget* row = gtk_widget_get_first_child(suvbox);
@@ -1537,7 +1569,7 @@ void StartMainIMWindow(const YampLoginData* dat) {
 
 	gtk_widget_add_css_class(dmsbutton, "space_button");
 
-	GtkWidget *dms_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+	GtkWidget* dms_sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
 	gtk_widget_set_halign(dms_sep, GTK_ALIGN_CENTER);
 	gtk_widget_set_size_request(dms_sep, 40, -1);
 

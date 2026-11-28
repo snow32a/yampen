@@ -23,3 +23,4 @@ int DeleteChannelEntry(GtkWidget* parent_box, char* channel_id);
 int InsertConvIntoList(YampChannel* conv);
 int ModifyConvInList(YampChannel* ch);
 int DeleteConvFromList(char* id);
+GtkWidget* FindConvRow(char* id, int type);

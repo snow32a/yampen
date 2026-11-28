@@ -512,3 +512,27 @@ int DeleteConvFromList(char* id) {
 	}
 	return 0;
 }
+
+GtkWidget* FindConvRow(char* id, int type) {
+	GtkWidget* row = gtk_widget_get_first_child(dmlist);
+
+	while (row) {
+		GtkWidget* box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row));
+		GtkWidget* label =
+			gtk_widget_get_next_sibling(gtk_widget_get_first_child(box));
+
+		int rowtype =
+			GPOINTER_TO_INT(g_object_get_data(G_OBJECT(label), "type"));
+
+		if (rowtype == type) {
+			char* rowid = g_object_get_data(G_OBJECT(row), "id");
+
+			if (rowid && strcmp(rowid, id) == 0)
+				return row;
+		}
+
+		row = gtk_widget_get_next_sibling(row);
+	}
+
+	return NULL;
+}

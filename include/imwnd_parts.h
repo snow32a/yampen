@@ -22,3 +22,6 @@ extern GtkWidget* typingindicator;
 extern GtkWidget* replyindicator;
 extern GtkWidget* AttachementsBox;
 extern GtkWidget* memberlist;
+
+extern GtkWidget* friendslist;
+extern GtkWidget* toptabs;
